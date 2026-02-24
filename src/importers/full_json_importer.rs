@@ -324,55 +324,61 @@ pub async fn import_everything(pool: &PgPool, raw: &str) -> anyhow::Result<()> {
         }
     }
 
-    // 5. Items
+    // 5. Items (and base items)
+    let mut all_items = Vec::new();
     if let Some(items) = data["item"].as_array() {
-        for i in items {
-            let source_slug = i["source"].as_str().unwrap_or("PHB");
-            upsert_source(pool, source_slug, false).await?;
-            let source_id = get_source_id(pool, source_slug).await?;
+        all_items.extend(items.iter());
+    }
+    if let Some(base_items) = data["baseitem"].as_array() {
+        all_items.extend(base_items.iter());
+    }
 
-            sqlx::query!(
-                r#"
-                INSERT INTO items (
-                    name, source_id, type, rarity, weight, value_cp, damage,
-                    armor_class, properties, requires_attune, entries, is_magic
-                )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-                ON CONFLICT (name, source_id) DO UPDATE SET
-                    entries = EXCLUDED.entries
-                "#,
-                i["name"].as_str().unwrap_or(""),
-                source_id,
-                i["type"].as_str(),
-                i["rarity"].as_str(),
-                i["weight"]
-                    .as_f64()
-                    .map(bigdecimal::BigDecimal::from_f64)
-                    .flatten(),
-                i["value"].as_i64().map(|v| v as i32),
-                i.get("dmg1")
-                    .map(|d| json!({"dmg1": d, "dmgType": i["dmgType"]})),
-                i["ac"].as_i64().map(|v| v as i32),
-                &i["property"]
-                    .as_array()
-                    .map(|a| a
-                        .iter()
-                        .filter_map(|v| v.as_str().map(String::from))
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default(),
-                i["reqAttune"].as_bool().unwrap_or(false),
-                i["entries"],
-                i.get("wondrous")
-                    .map(|w| w.as_bool().unwrap_or(false))
-                    .unwrap_or(false)
-                    || i["rarity"]
-                        .as_str()
-                        .map(|r| r != "none" && r != "unknown")
-                        .unwrap_or(false),
+    for i in all_items {
+        let source_slug = i["source"].as_str().unwrap_or("PHB");
+        upsert_source(pool, source_slug, false).await?;
+        let source_id = get_source_id(pool, source_slug).await?;
+
+        sqlx::query!(
+            r#"
+            INSERT INTO items (
+                name, source_id, type, rarity, weight, value_cp, damage,
+                armor_class, properties, requires_attune, entries, is_magic
             )
-            .execute(pool)
-            .await?;
-        }
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            ON CONFLICT (name, source_id) DO UPDATE SET
+                entries = EXCLUDED.entries
+            "#,
+            i["name"].as_str().unwrap_or(""),
+            source_id,
+            i["type"].as_str(),
+            i["rarity"].as_str(),
+            i["weight"]
+                .as_f64()
+                .map(bigdecimal::BigDecimal::from_f64)
+                .flatten(),
+            i["value"].as_i64().map(|v| v as i32),
+            i.get("dmg1")
+                .map(|d| json!({"dmg1": d, "dmgType": i["dmgType"]})),
+            i["ac"].as_i64().map(|v| v as i32),
+            &i["property"]
+                .as_array()
+                .map(|a| a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>())
+                .unwrap_or_default(),
+            i["reqAttune"].as_bool().unwrap_or(false),
+            i["entries"],
+            i.get("wondrous")
+                .map(|w| w.as_bool().unwrap_or(false))
+                .unwrap_or(false)
+                || i["rarity"]
+                    .as_str()
+                    .map(|r| r != "none" && r != "unknown")
+                    .unwrap_or(false),
+        )
+        .execute(pool)
+        .await?;
     }
 
     // 6. Monsters
@@ -562,7 +568,8 @@ async fn get_subclass_id(
 async fn get_race_id(pool: &PgPool, name: &str, source_slug: &str) -> anyhow::Result<i32> {
     let row = sqlx::query!(
         "SELECT r.id FROM races r JOIN sources s ON s.id=r.source_id WHERE r.name=$1 AND s.slug=$2",
-        name, source_slug
+        name,
+        source_slug
     )
     .fetch_one(pool)
     .await?;
@@ -622,7 +629,9 @@ async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow::Res
 pub async fn import_spell_classes(pool: &PgPool, raw: &str) -> anyhow::Result<()> {
     let data: Value = serde_json::from_str(raw)?;
 
-    let obj = data.as_object().ok_or_else(|| anyhow::anyhow!("Expected top-level object"))?;
+    let obj = data
+        .as_object()
+        .ok_or_else(|| anyhow::anyhow!("Expected top-level object"))?;
 
     for (source_slug, spells_map) in obj {
         let spells = match spells_map.as_object() {
