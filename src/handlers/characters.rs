@@ -1,7 +1,7 @@
 use crate::{
     db::AppState,
     error::{AppError, Result},
-    models::character::{Character, CreateCharacter},
+    models::character::{Character, CreateCharacter, UpdateCharacter},
     services::auth,
 };
 use axum::{
@@ -123,7 +123,7 @@ pub async fn update_character(
     State(state): State<AppState>,
     headers: HeaderMap,
     Path(id): Path<Uuid>,
-    Json(payload): Json<CreateCharacter>,
+    Json(payload): Json<UpdateCharacter>,
 ) -> Result<Json<Character>> {
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
 
@@ -134,9 +134,10 @@ pub async fn update_character(
         UPDATE characters SET
             name = $1, race_id = $2, subrace_id = $3, background_id = $4,
             str = $5, dex = $6, con = $7, int = $8, wis = $9, cha = $10,
-            max_hp = $11,
+            max_hp = $11, experience_pts = $12, current_hp = $13, temp_hp = $14,
+            inspiration = $15, notes = $16,
             updated_at = now()
-        WHERE id = $12 AND user_id = $13
+        WHERE id = $17 AND user_id = $18
         RETURNING *
         "#,
         payload.name,
@@ -150,6 +151,11 @@ pub async fn update_character(
         payload.wis,
         payload.cha,
         payload.max_hp,
+        payload.experience_pts,
+        payload.current_hp,
+        payload.temp_hp,
+        payload.inspiration,
+        payload.notes,
         id,
         user_id
     )
@@ -273,7 +279,9 @@ pub async fn add_character_feat(
     .ok_or(AppError::NotFound("Feat not found".into()))?;
 
     let uses_max = if feat.has_uses {
-        feat.uses_formula.as_ref().and_then(|f| f.parse::<i32>().ok())
+        feat.uses_formula
+            .as_ref()
+            .and_then(|f| f.parse::<i32>().ok())
     } else {
         None
     };
