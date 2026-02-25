@@ -23,6 +23,7 @@ pub fn all_routes() -> Router<AppState> {
     let compendium_routes = Router::new()
         .route("/spells", get(compendium::list_spells))
         .route("/items", get(compendium::list_items))
+        .route("/feats", get(compendium::list_feats))
         .route("/monsters", get(compendium::list_monsters))
         .route("/races", get(compendium::list_races))
         .route("/backgrounds", get(compendium::list_backgrounds))

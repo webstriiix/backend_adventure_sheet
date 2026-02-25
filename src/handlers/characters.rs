@@ -38,7 +38,13 @@ pub async fn list_characters(
 
     let characters = sqlx::query_as!(
         Character,
-        "SELECT * FROM characters WHERE user_id = $1 ORDER BY updated_at DESC",
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.user_id = $1
+        ORDER BY c.updated_at DESC
+        "#,
         user_id
     )
     .fetch_all(&state.db)
@@ -57,7 +63,12 @@ pub async fn get_character(
 
     let character = sqlx::query_as!(
         Character,
-        "SELECT * FROM characters WHERE id = $1 AND user_id = $2",
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1 AND c.user_id = $2
+        "#,
         id,
         user_id
     )
@@ -78,15 +89,14 @@ pub async fn create_character(
 
     let mut tx = state.db.begin().await?;
 
-    let character = sqlx::query_as!(
-        Character,
+    let row = sqlx::query!(
         r#"
         INSERT INTO characters (
             user_id, name, race_id, subrace_id, background_id,
             str, dex, con, int, wis, cha, max_hp, current_hp, temp_hp
         )
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, 0)
-        RETURNING *
+        RETURNING id
         "#,
         user_id,
         payload.name,
@@ -104,16 +114,31 @@ pub async fn create_character(
     .fetch_one(&mut *tx)
     .await?;
 
+    let char_id = row.id;
+
     // Insert class (starting at level 1)
     sqlx::query!(
         "INSERT INTO character_classes (character_id, class_id, level, is_primary) VALUES ($1, $2, 1, true)",
-        character.id,
+        char_id,
         payload.class_id
     )
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
+
+    let character = sqlx::query_as!(
+        Character,
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1
+        "#,
+        char_id
+    )
+    .fetch_one(&state.db)
+    .await?;
 
     Ok(Json(character))
 }
@@ -127,9 +152,7 @@ pub async fn update_character(
 ) -> Result<Json<Character>> {
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
 
-    // Check ownership first or just include user_id in UPDATE where clause
-    let character = sqlx::query_as!(
-        Character,
+    let updated = sqlx::query!(
         r#"
         UPDATE characters SET
             name = $1, race_id = $2, subrace_id = $3, background_id = $4,
@@ -138,7 +161,7 @@ pub async fn update_character(
             inspiration = $15, notes = $16,
             updated_at = now()
         WHERE id = $17 AND user_id = $18
-        RETURNING *
+        RETURNING id
         "#,
         payload.name,
         payload.race_id,
@@ -164,6 +187,43 @@ pub async fn update_character(
     .ok_or(AppError::NotFound(
         "Character not found or access denied".into(),
     ))?;
+
+    // Update primary class if provided
+    if let Some(class_id) = payload.class_id {
+        sqlx::query!(
+            r#"
+            INSERT INTO character_classes (character_id, class_id, level, is_primary)
+            VALUES ($1, $2, 1, true)
+            ON CONFLICT (character_id, class_id) DO NOTHING
+            "#,
+            updated.id,
+            class_id
+        )
+        .execute(&state.db)
+        .await?;
+
+        // Mark this class as primary, others as non-primary
+        sqlx::query!(
+            "UPDATE character_classes SET is_primary = (class_id = $2) WHERE character_id = $1",
+            updated.id,
+            class_id
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    let character = sqlx::query_as!(
+        Character,
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1
+        "#,
+        updated.id
+    )
+    .fetch_one(&state.db)
+    .await?;
 
     Ok(Json(character))
 }

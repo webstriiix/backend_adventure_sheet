@@ -11,6 +11,7 @@ pub struct Character {
     pub race_id: Option<i32>,
     pub subrace_id: Option<i32>,
     pub background_id: Option<i32>,
+    pub class_id: Option<i32>,
     pub str: i32,
     pub dex: i32,
     pub con: i32,
@@ -45,6 +46,7 @@ pub struct CreateCharacter {
 #[derive(Debug, Deserialize)]
 pub struct UpdateCharacter {
     pub name: String,
+    pub class_id: Option<i32>,
     pub experience_pts: i32,
     pub race_id: Option<i32>,
     pub subrace_id: Option<i32>,

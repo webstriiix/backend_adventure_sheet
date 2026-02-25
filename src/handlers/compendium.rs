@@ -8,7 +8,7 @@ use crate::{
     db::AppState,
     error::Result,
     models::{
-        backgrounds::Background, items::Item, monsters::Monster,
+        backgrounds::Background, feats::Feat, items::Item, monsters::Monster,
         optional_features::OptionalFeature, races::Race, spells::Spell,
     },
 };
@@ -26,7 +26,7 @@ pub struct OptionalFeatureQuery {
     pub feature_type: Option<String>,
 }
 
-// Spells 
+// Spells
 pub async fn list_spells(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
@@ -50,7 +50,7 @@ pub async fn list_spells(
     Ok(Json(rows))
 }
 
-//  Items 
+//  Items
 pub async fn list_items(
     State(state): State<AppState>,
     Query(q): Query<ListQuery>,
@@ -64,7 +64,6 @@ pub async fn list_items(
         WHERE ($1::text IS NULL OR i.name ILIKE $1)
           AND ($2::text IS NULL OR src.slug = $2)
         ORDER BY i.name
-        LIMIT 100
         "#,
         q.name.as_ref().map(|n| format!("%{}%", n)),
         q.source,
@@ -75,7 +74,7 @@ pub async fn list_items(
     Ok(Json(rows))
 }
 
-//  Monsters 
+//  Monsters
 
 pub async fn list_monsters(
     State(state): State<AppState>,
@@ -100,7 +99,7 @@ pub async fn list_monsters(
     Ok(Json(rows))
 }
 
-//  Races 
+//  Races
 
 pub async fn list_races(
     State(state): State<AppState>,
@@ -138,6 +137,30 @@ pub async fn list_backgrounds(
         WHERE ($1::text IS NULL OR b.name ILIKE $1)
           AND ($2::text IS NULL OR src.slug = $2)
         ORDER BY b.name
+        "#,
+        q.name.as_ref().map(|n| format!("%{}%", n)),
+        q.source,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// Feats
+
+pub async fn list_feats(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Vec<Feat>>> {
+    let rows = sqlx::query_as!(
+        Feat,
+        r#"
+        SELECT f.* FROM feats f
+        JOIN sources src ON src.id = f.source_id
+        WHERE ($1::text IS NULL OR f.name ILIKE $1)
+          AND ($2::text IS NULL OR src.slug = $2)
+        ORDER BY f.name
         "#,
         q.name.as_ref().map(|n| format!("%{}%", n)),
         q.source,
