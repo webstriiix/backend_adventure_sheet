@@ -818,6 +818,138 @@ Remove an item from inventory.
 
 ---
 
+## Resource Tracking (Auth Required)
+
+### `PATCH /characters/{id}/death-saves`
+
+Update death save successes or failures.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:**
+```json
+{
+  "successes": 1,
+  "failures": 0
+}
+```
+
+**Response:** `200 OK` — Updated character object.
+
+---
+
+### `PATCH /characters/{id}/spell-slots/{level}`
+
+Update expended spell slots for a specific spell level.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `level` | integer | Spell slot level (1-9) |
+
+**Request Body:**
+```json
+{
+  "expended": 2
+}
+```
+
+**Response:** `200 OK` — Updated character spell slot object.
+
+---
+
+### `PATCH /characters/{id}/hit-dice/{size}`
+
+Update expended hit dice for a specific die size.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `size` | integer | Die size (6, 8, 10, or 12) |
+
+**Request Body:**
+```json
+{
+  "expended": 1
+}
+```
+
+**Response:** `200 OK` — Updated character hit dice object.
+
+---
+
+### `PATCH /characters/{id}/features/{feat_id}`
+
+Update the remaining uses for a specific feature.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `feat_id` | integer | Feat FK |
+
+**Request Body:**
+```json
+{
+  "uses_remaining": 0
+}
+```
+
+**Response:** `200 OK` — Updated character feat object.
+
+---
+
+## Resting (Auth Required)
+
+### `POST /characters/{id}/short-rest`
+
+Perform a short rest, optionally spending hit dice to heal. Resets features that recharge on a short rest.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:**
+```json
+{
+  "hit_dice_spent": {
+    "8": 1,
+    "10": 0
+  }
+}
+```
+
+**Response:** `200 OK` — Updated character object.
+
+---
+
+### `POST /characters/{id}/long-rest`
+
+Perform a long rest. Fully heals the character, resets all spell slots, resets features that recharge on a short/long rest, and resets hit dice to 0 expended.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:** None
+
+**Response:** `200 OK` — Updated character object.
+
+---
+
 ## Admin (No Auth)
 
 These endpoints have **no authentication**. Secure them in production.
@@ -895,5 +1027,11 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `POST` | `/characters/{id}/inventory` | Yes | Add item |
 | `PUT` | `/characters/{id}/inventory/{inv_id}` | Yes | Update item |
 | `DELETE` | `/characters/{id}/inventory/{inv_id}` | Yes | Remove item |
+| `PATCH` | `/characters/{id}/death-saves` | Yes | Update death saves |
+| `PATCH` | `/characters/{id}/spell-slots/{level}` | Yes | Update expended spell slots |
+| `PATCH` | `/characters/{id}/hit-dice/{size}` | Yes | Update expended hit dice |
+| `PATCH` | `/characters/{id}/features/{feat_id}` | Yes | Update feature uses |
+| `POST` | `/characters/{id}/short-rest` | Yes | Perform short rest |
+| `POST` | `/characters/{id}/long-rest` | Yes | Perform long rest |
 | `POST` | `/import` | No | Bulk import data |
 | `POST` | `/import/spell-classes` | No | Import spell-class mappings |

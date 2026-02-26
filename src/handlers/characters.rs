@@ -1,7 +1,10 @@
 use crate::{
     db::AppState,
     error::{AppError, Result},
-    models::character::{Character, CreateCharacter, UpdateCharacter},
+    models::character::{
+        Character, CharacterHitDice, CharacterSpellSlot, CreateCharacter, ShortRestRequest,
+        UpdateCharacter, UpdateHitDice, UpdateSpellSlot,
+    },
     services::auth,
 };
 use axum::{
@@ -93,9 +96,12 @@ pub async fn create_character(
         r#"
         INSERT INTO characters (
             user_id, name, race_id, subrace_id, background_id,
-            str, dex, con, int, wis, cha, max_hp, current_hp, temp_hp
+            str, dex, con, int, wis, cha, max_hp, current_hp, temp_hp,
+            death_saves_successes, death_saves_failures,
+            cp, sp, ep, gp, pp
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, 0)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $12, 0,
+                0, 0, 0, 0, 0, 0, 0)
         RETURNING id
         "#,
         user_id,
@@ -158,9 +164,16 @@ pub async fn update_character(
             name = $1, race_id = $2, subrace_id = $3, background_id = $4,
             str = $5, dex = $6, con = $7, int = $8, wis = $9, cha = $10,
             max_hp = $11, experience_pts = $12, current_hp = $13, temp_hp = $14,
-            inspiration = $15, notes = $16,
+            inspiration = COALESCE($15, inspiration), notes = COALESCE($16, notes),
+            death_saves_successes = COALESCE($17, death_saves_successes),
+            death_saves_failures = COALESCE($18, death_saves_failures),
+            cp = COALESCE($19, cp),
+            sp = COALESCE($20, sp),
+            ep = COALESCE($21, ep),
+            gp = COALESCE($22, gp),
+            pp = COALESCE($23, pp),
             updated_at = now()
-        WHERE id = $17 AND user_id = $18
+        WHERE id = $24 AND user_id = $25
         RETURNING id
         "#,
         payload.name,
@@ -179,6 +192,13 @@ pub async fn update_character(
         payload.temp_hp,
         payload.inspiration,
         payload.notes,
+        payload.death_saves_successes,
+        payload.death_saves_failures,
+        payload.cp,
+        payload.sp,
+        payload.ep,
+        payload.gp,
+        payload.pp,
         id,
         user_id
     )
@@ -648,4 +668,272 @@ pub async fn remove_inventory_item(
     }
 
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ── Resource Tracking ────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateDeathSaves {
+    pub successes: Option<i32>,
+    pub failures: Option<i32>,
+}
+
+// PATCH /characters/:id/death-saves
+pub async fn update_death_saves(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<UpdateDeathSaves>,
+) -> Result<Json<Character>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+
+    let updated = sqlx::query!(
+        r#"
+        UPDATE characters SET
+            death_saves_successes = COALESCE($1, death_saves_successes),
+            death_saves_failures = COALESCE($2, death_saves_failures),
+            updated_at = now()
+        WHERE id = $3 AND user_id = $4
+        RETURNING id
+        "#,
+        payload.successes,
+        payload.failures,
+        id,
+        user_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Character not found".into()))?;
+
+    let character = sqlx::query_as!(
+        Character,
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1
+        "#,
+        updated.id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(character))
+}
+
+// PATCH /characters/:id/spell-slots/:level
+pub async fn update_spell_slots(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, level)): Path<(Uuid, i32)>,
+    Json(payload): Json<UpdateSpellSlot>,
+) -> Result<Json<CharacterSpellSlot>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let row = sqlx::query_as!(
+        CharacterSpellSlot,
+        r#"
+        INSERT INTO character_spell_slots (character_id, slot_level, expended)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (character_id, slot_level) 
+        DO UPDATE SET expended = $3
+        RETURNING *
+        "#,
+        character_id,
+        level,
+        payload.expended
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(row))
+}
+
+// PATCH /characters/:id/hit-dice/:size
+pub async fn update_hit_dice(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, size)): Path<(Uuid, i32)>,
+    Json(payload): Json<UpdateHitDice>,
+) -> Result<Json<CharacterHitDice>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let row = sqlx::query_as!(
+        CharacterHitDice,
+        r#"
+        INSERT INTO character_hit_dice (character_id, die_size, expended)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (character_id, die_size) 
+        DO UPDATE SET expended = $3
+        RETURNING *
+        "#,
+        character_id,
+        size,
+        payload.expended
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(row))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateFeatureUses {
+    pub uses_remaining: i32,
+}
+
+// PATCH /characters/:id/features/:feat_id
+pub async fn update_feature_uses(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path((character_id, feat_id)): Path<(Uuid, i32)>,
+    Json(payload): Json<UpdateFeatureUses>,
+) -> Result<Json<CharacterFeatRow>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let row = sqlx::query_as!(
+        CharacterFeatRow,
+        r#"
+        UPDATE character_feats SET uses_remaining = $1
+        WHERE character_id = $2 AND feat_id = $3
+        RETURNING *
+        "#,
+        payload.uses_remaining,
+        character_id,
+        feat_id
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or(AppError::NotFound("Character feat not found".into()))?;
+
+    Ok(Json(row))
+}
+
+// ── Rests ──────────────────────────────────────────────────────────────
+
+// POST /characters/:id/short-rest
+pub async fn short_rest(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<Uuid>,
+    Json(payload): Json<ShortRestRequest>,
+) -> Result<Json<Character>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let mut tx = state.db.begin().await?;
+
+    // Roll/spend hit dice based on payload
+    for (die_size, spent) in payload.hit_dice_spent {
+        sqlx::query!(
+            r#"
+            INSERT INTO character_hit_dice (character_id, die_size, expended)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (character_id, die_size) 
+            DO UPDATE SET expended = character_hit_dice.expended + $3
+            "#,
+            character_id,
+            die_size,
+            spent
+        )
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    // Refresh Short Rest features
+    sqlx::query!(
+        r#"
+        UPDATE character_feats 
+        SET uses_remaining = uses_max 
+        WHERE character_id = $1 AND recharge_on = 'short_rest'
+        "#,
+        character_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let character = sqlx::query_as!(
+        Character,
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1
+        "#,
+        character_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(character))
+}
+
+// POST /characters/:id/long-rest
+pub async fn long_rest(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<Uuid>,
+) -> Result<Json<Character>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let mut tx = state.db.begin().await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE characters 
+        SET current_hp = max_hp, death_saves_successes = 0, death_saves_failures = 0
+        WHERE id = $1
+        "#,
+        character_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE character_spell_slots SET expended = 0 WHERE character_id = $1",
+        character_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        r#"
+        UPDATE character_feats 
+        SET uses_remaining = uses_max 
+        WHERE character_id = $1 AND (recharge_on = 'long_rest' OR recharge_on = 'short_rest' OR recharge_on = 'dawn')
+        "#,
+        character_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "UPDATE character_hit_dice SET expended = 0 WHERE character_id = $1",
+        character_id
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    let character = sqlx::query_as!(
+        Character,
+        r#"
+        SELECT c.*, cc.class_id
+        FROM characters c
+        LEFT JOIN character_classes cc ON cc.character_id = c.id AND cc.is_primary = true
+        WHERE c.id = $1
+        "#,
+        character_id
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(character))
 }

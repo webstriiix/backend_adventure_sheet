@@ -4,7 +4,7 @@ use crate::{
 };
 use axum::{
     Router,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 
 async fn check_health() -> &'static str {
@@ -27,7 +27,10 @@ pub fn all_routes() -> Router<AppState> {
         .route("/monsters", get(compendium::list_monsters))
         .route("/races", get(compendium::list_races))
         .route("/backgrounds", get(compendium::list_backgrounds))
-        .route("/optional-features", get(compendium::list_optional_features));
+        .route(
+            "/optional-features",
+            get(compendium::list_optional_features),
+        );
 
     let char_routes = Router::new()
         .route(
@@ -66,11 +69,34 @@ pub fn all_routes() -> Router<AppState> {
         .route(
             "/characters/{id}/inventory/{inventory_id}",
             put(characters::update_inventory_item).delete(characters::remove_inventory_item),
-        );
+        )
+        // Resource tracking
+        .route(
+            "/characters/{id}/death-saves",
+            patch(characters::update_death_saves),
+        )
+        .route(
+            "/characters/{id}/spell-slots/{level}",
+            patch(characters::update_spell_slots),
+        )
+        .route(
+            "/characters/{id}/hit-dice/{size}",
+            patch(characters::update_hit_dice),
+        )
+        .route(
+            "/characters/{id}/features/{feat_id}",
+            patch(characters::update_feature_uses),
+        )
+        // Rests
+        .route("/characters/{id}/short-rest", post(characters::short_rest))
+        .route("/characters/{id}/long-rest", post(characters::long_rest));
 
     let admin_routes = Router::new()
         .route("/import", post(admin::trigger_import))
-        .route("/import/spell-classes", post(admin::trigger_import_spell_classes));
+        .route(
+            "/import/spell-classes",
+            post(admin::trigger_import_spell_classes),
+        );
 
     Router::new()
         .route("/check_health", get(check_health))
