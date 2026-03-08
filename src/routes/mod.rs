@@ -43,6 +43,15 @@ pub fn all_routes() -> Router<AppState> {
                 .put(characters::update_character)
                 .delete(characters::delete_character),
         )
+        // Character classes and leveling
+        .route(
+            "/characters/{id}/classes",
+            post(characters::add_character_class),
+        )
+        .route(
+            "/characters/{id}/classes/{class_id}",
+            patch(characters::update_character_class),
+        )
         // Character feats
         .route(
             "/characters/{id}/feats",
@@ -76,8 +85,12 @@ pub fn all_routes() -> Router<AppState> {
             patch(characters::update_death_saves),
         )
         .route(
+            "/characters/{id}/spell-slots",
+            get(characters::get_spell_slots),
+        )
+        .route(
             "/characters/{id}/spell-slots/{level}",
-            patch(characters::update_spell_slots),
+            get(characters::get_spell_slot).patch(characters::update_spell_slots),
         )
         .route(
             "/characters/{id}/hit-dice/{size}",
@@ -87,9 +100,28 @@ pub fn all_routes() -> Router<AppState> {
             "/characters/{id}/features/{feat_id}",
             patch(characters::update_feature_uses),
         )
+        // Generic dynamically-named resources
+        .route(
+            "/characters/{id}/resources/{resource_name}",
+            patch(characters::update_resource_uses),
+        )
         // Rests
         .route("/characters/{id}/short-rest", post(characters::short_rest))
-        .route("/characters/{id}/long-rest", post(characters::long_rest));
+        .route("/characters/{id}/long-rest", post(characters::long_rest))
+        // ASI & Feats
+        .route(
+            "/characters/{id}/available-feats",
+            get(characters::list_available_feats),
+        )
+        .route(
+            "/characters/{id}/asi-choice",
+            post(characters::choose_asi_or_feat),
+        )
+        // Actions
+        .route(
+            "/characters/{id}/actions",
+            get(characters::get_character_actions),
+        );
 
     let admin_routes = Router::new()
         .route("/import", post(admin::trigger_import))

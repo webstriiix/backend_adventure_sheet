@@ -4,7 +4,11 @@ use axum::{
 };
 use serde::Deserialize;
 
-use crate::{db::AppState, error::{AppError, Result}, models::class::*};
+use crate::{
+    db::AppState,
+    error::{AppError, Result},
+    models::class::*,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct ListQuery {
@@ -35,7 +39,8 @@ pub async fn list_classes(
             c.multiclass_requirements,
             c.class_table,
             c.subclass_title,
-            c.edition
+            c.edition,
+            c.asi_levels
         FROM classes c
         JOIN sources s ON s.id = c.source_id
         WHERE ($1::text IS NULL OR s.slug = $1)
@@ -66,7 +71,7 @@ pub async fn get_class_detail(
             c.hit_die, c.proficiency_saves, c.spellcasting_ability,
             c.caster_progression, c.weapon_proficiencies, c.armor_proficiencies,
             c.skill_choices, c.starting_equipment, c.multiclass_requirements,
-            c.class_table, c.subclass_title, c.edition
+            c.class_table, c.subclass_title, c.edition, c.asi_levels
         FROM classes c
         JOIN sources s ON s.id = c.source_id
         WHERE c.name = $1 AND s.slug = $2
@@ -149,14 +154,20 @@ pub async fn get_class_detail(
             let features = all_scf
                 .iter()
                 .filter(|f| {
-                    f.subclass_short_name == sc.short_name
-                    && f.subclass_source  == sc.source_slug
+                    f.subclass_short_name == sc.short_name && f.subclass_source == sc.source_slug
                 })
                 .cloned()
                 .collect();
-            SubclassWithFeatures { subclass: sc, features }
+            SubclassWithFeatures {
+                subclass: sc,
+                features,
+            }
         })
         .collect();
 
-    Ok(Json(ClassDetail { class, features, subclasses }))
+    Ok(Json(ClassDetail {
+        class,
+        features,
+        subclasses,
+    }))
 }

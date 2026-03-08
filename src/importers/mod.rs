@@ -1,2 +1,11 @@
+pub mod full_json_importer;
+pub mod import_backgrounds;
+pub mod import_classes;
+pub mod import_feats;
+pub mod import_helpers;
+pub mod import_items;
+pub mod import_monsters;
+pub mod import_optional_features;
+pub mod import_races;
+pub mod import_spells;
 pub mod pipe_parser;
-pub mod full_json_importer; 

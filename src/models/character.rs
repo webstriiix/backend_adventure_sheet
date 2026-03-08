@@ -62,6 +62,8 @@ pub struct CreateCharacter {
     pub wis: i32,
     pub cha: i32,
     pub max_hp: i32,
+    pub bonus_feat_id: Option<i32>,
+    pub background_feat_id: Option<i32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -105,4 +107,27 @@ pub struct UpdateHitDice {
 #[derive(Debug, Deserialize)]
 pub struct ShortRestRequest {
     pub hit_dice_spent: std::collections::HashMap<i32, i32>, // mapping die_size to amount spent
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddClassRequest {
+    pub class_id: i32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateClassLevelRequest {
+    pub level: i32,
+    pub subclass_id: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AsiChoiceRequest {
+    pub bump_str: Option<i32>,
+    pub bump_dex: Option<i32>,
+    pub bump_con: Option<i32>,
+    pub bump_int: Option<i32>,
+    pub bump_wis: Option<i32>,
+    pub bump_cha: Option<i32>,
+    pub feat_id: Option<i32>,
+    pub source_type: Option<String>,
 }

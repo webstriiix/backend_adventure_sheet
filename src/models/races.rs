@@ -14,6 +14,7 @@ pub struct Race {
     pub skill_proficiencies: Option<Value>,    // JSONB
     pub language_proficiencies: Option<Value>, // JSONB
     pub trait_tags: Vec<String>,
+    pub grants_bonus_feat: Option<bool>,
     pub entries: Value, // JSONB
 }
 

@@ -19,6 +19,7 @@ pub struct Class {
     pub class_table: Value, // JSONB — level/slot progression
     pub subclass_title: String,
     pub edition: Option<String>,
+    pub asi_levels: Option<Vec<i32>>,
 }
 
 /// One row of class_feature table

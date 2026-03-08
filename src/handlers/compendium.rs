@@ -39,7 +39,6 @@ pub async fn list_spells(
         WHERE ($1::text IS NULL OR s.name ILIKE $1)
           AND ($2::text IS NULL OR src.slug = $2)
         ORDER BY s.name
-        LIMIT 100
         "#,
         q.name.as_ref().map(|n| format!("%{}%", n)),
         q.source,

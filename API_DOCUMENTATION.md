@@ -483,7 +483,9 @@ Create a new character.
   "int": 8,
   "wis": 12,
   "cha": 15,
-  "max_hp": 12
+  "max_hp": 12,
+  "bonus_feat_id": null,
+  "background_feat_id": null
 }
 ```
 
@@ -501,6 +503,8 @@ Create a new character.
 | `wis` | integer | Yes | Wisdom score |
 | `cha` | integer | Yes | Charisma score |
 | `max_hp` | integer | Yes | Maximum hit points (`current_hp` set equal) |
+| `bonus_feat_id` | integer | No | Feat ID to add if race grants one |
+| `background_feat_id` | integer | No | Feat ID to add if background grants one |
 
 **Response:** `200 OK`
 ```json
@@ -577,6 +581,97 @@ Delete a character and all related data (feats, spells, inventory cascade).
 
 ---
 
+### `GET /characters/{id}/actions`
+
+Aggregates all combat actions for a character into D&D Beyond-style buckets (all, attack, action, bonus_action, reaction, other, limited_use).
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+{
+  "all": [],
+  "attack": [
+    {
+      "name": "Longsword",
+      "source": null,
+      "description": "[\"V\"]",
+      "range": null,
+      "hit_bonus": "+5",
+      "damage": "1d8 + 3",
+      "max_uses": null,
+      "current_uses": null,
+      "reset_type": null,
+      "time": [{"number": 1, "unit": "action"}]
+    }
+  ],
+  "action": [],
+  "bonus_action": [],
+  "reaction": [],
+  "other": [],
+  "limited_use": []
+}
+```
+
+---
+
+## Character Classes & Leveling (Auth Required)
+
+### `POST /characters/{id}/classes`
+
+Add a new class to a character (Multiclassing). Validates that the character meets the ability score prerequisites for the new class.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:**
+```json
+{
+  "class_id": 2
+}
+```
+
+**Response:** `200 OK` — Updated character object.
+
+**Errors:**
+- `400` — Character does not meet multiclass requirements (e.g., requires 13 CHA).
+
+---
+
+### `PATCH /characters/{id}/classes/{class_id}`
+
+Update a character's level in a specific class and optionally assign a subclass. Validates that the total character level does not exceed 20, and that the subclass unlock level requirement has been met.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `class_id` | integer | Class FK |
+
+**Request Body:**
+```json
+{
+  "level": 3,
+  "subclass_id": 5
+}
+```
+
+**Response:** `200 OK` — Updated character object.
+
+**Errors:**
+- `400` — Total character level exceeds 20.
+- `400` — Subclass level requirement not met (e.g., subclass unlocks at level 3, but `level` provided is 2).
+
+---
+
 ## Character Feats (Auth Required)
 
 ### `GET /characters/{id}/feats`
@@ -642,6 +737,65 @@ Remove a feat from a character.
 | `feat_id` | integer | Feat FK (not the character_feats row ID) |
 
 **Response:** `204 No Content`
+
+---
+
+### `GET /characters/{id}/available-feats`
+
+Get a list of feats that are available for the character to choose from. Filters out feats whose prerequisites are not met (e.g., ability score requirements, class level, race, or spellcasting capability).
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK` — Array of available `Feat` objects.
+
+---
+
+### `POST /characters/{id}/asi-choice`
+
+Apply an Ability Score Improvement (ASI) or choose a Feat for a given character level-up.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:**
+```json
+{
+  "bump_str": 0,
+  "bump_dex": 2,
+  "bump_con": 0,
+  "bump_int": 0,
+  "bump_wis": 1,
+  "bump_cha": 0,
+  "feat_id": null,
+  "source_type": "level"
+}
+```
+
+*Note: You must either provide a set of `bump_*` properties whose sum total is <= 2, OR provide a `feat_id`. If `feat_id` is provided, the `bump_*` properties are ignored.*
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `bump_str` | integer | No | `0` | Bonus to Strength (+1 or +2) |
+| `bump_dex` | integer | No | `0` | Bonus to Dexterity (+1 or +2) |
+| `bump_con` | integer | No | `0` | Bonus to Constitution (+1 or +2) |
+| `bump_int` | integer | No | `0` | Bonus to Intelligence (+1 or +2) |
+| `bump_wis` | integer | No | `0` | Bonus to Wisdom (+1 or +2) |
+| `bump_cha` | integer | No | `0` | Bonus to Charisma (+1 or +2) |
+| `feat_id` | integer | No | `null` | Choose a feat instead of ASI |
+| `source_type` | string | No | `"asi"` | Context of the feat/ASI choice |
+
+**Response:** `200 OK` — Updated character object.
+
+**Errors:**
+- `400` — Cannot increase ability scores by more than 2
+- `404` — Feat or Character not found
 
 ---
 
@@ -842,6 +996,51 @@ Update death save successes or failures.
 
 ---
 
+### `GET /characters/{id}/spell-slots`
+
+Get all spell slots for a character that have been expended.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "character_id": "550e8400-...",
+    "slot_level": 1,
+    "expended": 2
+  }
+]
+```
+
+---
+
+### `GET /characters/{id}/spell-slots/{level}`
+
+Get the expended spell slot status for a specific spell level.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `level` | integer | Spell slot level (1-9) |
+
+**Response:** `200 OK`
+```json
+{
+  "character_id": "550e8400-...",
+  "slot_level": 1,
+  "expended": 2
+}
+```
+
+---
+
 ### `PATCH /characters/{id}/spell-slots/{level}`
 
 Update expended spell slots for a specific spell level.
@@ -905,6 +1104,28 @@ Update the remaining uses for a specific feature.
 ```
 
 **Response:** `200 OK` — Updated character feat object.
+
+---
+
+### `PATCH /characters/{id}/resources/{resource_name}`
+
+Update the remaining uses for a generic dynamic resource pool (e.g., class features or custom pools).
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `resource_name` | string | Name of the resource pool |
+
+**Request Body:**
+```json
+{
+  "uses_remaining": 2
+}
+```
+
+**Response:** `200 OK` — Updated resource pool object.
 
 ---
 
@@ -1016,6 +1237,7 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `GET` | `/characters/{id}` | Yes | Get character |
 | `PUT` | `/characters/{id}` | Yes | Update character |
 | `DELETE` | `/characters/{id}` | Yes | Delete character |
+| `GET` | `/characters/{id}/actions` | Yes | Get character actions |
 | `GET` | `/characters/{id}/feats` | Yes | List character feats |
 | `POST` | `/characters/{id}/feats` | Yes | Add feat |
 | `DELETE` | `/characters/{id}/feats/{feat_id}` | Yes | Remove feat |
@@ -1027,11 +1249,18 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `POST` | `/characters/{id}/inventory` | Yes | Add item |
 | `PUT` | `/characters/{id}/inventory/{inv_id}` | Yes | Update item |
 | `DELETE` | `/characters/{id}/inventory/{inv_id}` | Yes | Remove item |
+| `POST` | `/characters/{id}/classes` | Yes | Add class (multiclass) |
+| `PATCH` | `/characters/{id}/classes/{class_id}` | Yes | Update class level/subclass |
 | `PATCH` | `/characters/{id}/death-saves` | Yes | Update death saves |
+| `GET` | `/characters/{id}/spell-slots` | Yes | List expended spell slots |
+| `GET` | `/characters/{id}/spell-slots/{level}` | Yes | Get expended spell slot by level |
 | `PATCH` | `/characters/{id}/spell-slots/{level}` | Yes | Update expended spell slots |
 | `PATCH` | `/characters/{id}/hit-dice/{size}` | Yes | Update expended hit dice |
 | `PATCH` | `/characters/{id}/features/{feat_id}` | Yes | Update feature uses |
+| `PATCH` | `/characters/{id}/resources/{resource_name}` | Yes | Update generic resource pool uses |
 | `POST` | `/characters/{id}/short-rest` | Yes | Perform short rest |
 | `POST` | `/characters/{id}/long-rest` | Yes | Perform long rest |
+| `GET` | `/characters/{id}/available-feats` | Yes | Get feats available to character |
+| `POST` | `/characters/{id}/asi-choice` | Yes | Increase ability scores or pick feat |
 | `POST` | `/import` | No | Bulk import data |
 | `POST` | `/import/spell-classes` | No | Import spell-class mappings |
