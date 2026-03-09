@@ -1,0 +1,115 @@
+{
+  "_meta": {
+    "source": "example",
+    "version": "0.0.1",
+    "note": "This file is only a structural example for the CLI import feature. Values are placeholders."
+  },
+
+  "race": [
+    {
+      "name": "John Doe Species",
+      "source": "example",
+      "size": ["M"],
+      "ability": [
+        {
+          "str": 0,
+          "dex": 0,
+          "con": 0,
+          "int": 0,
+          "wis": 0,
+          "cha": 0
+        }
+      ],
+      "speed": 30,
+      "languageProficiencies": [
+        {
+          "common": true,
+          "exampleLanguage": true
+        }
+      ],
+      "entries": [
+        "Placeholder description for an example race.",
+        "Replace this with actual race description in your own data."
+      ]
+    }
+  ],
+
+  "class": [
+    {
+      "name": "John Doe Class",
+      "source": "example",
+      "hd": {
+        "number": 1,
+        "faces": 8
+      },
+      "proficiency": [
+        "exampleSavingThrow1",
+        "exampleSavingThrow2"
+      ],
+      "entries": [
+        "Example class used only for demonstrating JSON structure."
+      ]
+    }
+  ],
+
+  "subclass": [
+    {
+      "name": "Path of John Doe",
+      "className": "John Doe Class",
+      "source": "example",
+      "entries": [
+        "This is a placeholder subclass used only for demonstrating import structure."
+      ]
+    }
+  ],
+
+  "background": [
+    {
+      "name": "John Doe Background",
+      "source": "example",
+      "entries": [
+        "Example background entry used for demonstrating JSON imports."
+      ]
+    }
+  ],
+
+  "spell": [
+    {
+      "name": "John Doe Spell",
+      "level": 1,
+      "school": "A",
+      "time": [
+        {
+          "number": 1,
+          "unit": "action"
+        }
+      ],
+      "range": {
+        "type": "point",
+        "distance": {
+          "type": "feet",
+          "amount": 30
+        }
+      },
+      "duration": [
+        {
+          "type": "instant"
+        }
+      ],
+      "entries": [
+        "Placeholder spell description used for import example."
+      ]
+    }
+  ],
+
+  "item": [
+    {
+      "name": "John Doe Item",
+      "type": "example",
+      "rarity": "none",
+      "entries": [
+        "Example item entry used only to show JSON structure."
+      ]
+    }
+  ]
+}

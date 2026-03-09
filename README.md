@@ -111,6 +111,29 @@ migrations/            # SQL migration files (auto-applied)
 
 The server exposes a `POST /api/v1/import` endpoint that accepts JSON game data files (races, classes, spells, items, feats, etc.).
 
+An annotated example of the expected JSON structure is provided in [`import_example.json`](./import_example.json). It covers the top-level keys the importer recognises:
+
+```json
+{
+  "_meta": { "source": "example", "version": "0.0.1" },
+
+  "race":       [ { "name": "...", "source": "...", "size": ["M"], "speed": 30, "ability": [...], "entries": [...] } ],
+  "class":      [ { "name": "...", "source": "...", "hd": { "number": 1, "faces": 8 }, "proficiency": [...] } ],
+  "subclass":   [ { "name": "...", "className": "...", "source": "...", "entries": [...] } ],
+  "background": [ { "name": "...", "source": "...", "entries": [...] } ],
+  "spell":      [ { "name": "...", "level": 1, "school": "A", "time": [...], "range": {...}, "duration": [...], "entries": [...] } ],
+  "item":       [ { "name": "...", "type": "...", "rarity": "none", "entries": [...] } ]
+}
+```
+
+To import a file, POST it directly to the endpoint:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/import \
+  -H "Content-Type: application/json" \
+  -d @your_data_file.json
+```
+
 > **Important:** No game data is bundled with this repository. You must supply your own JSON files. See the [Disclaimer](#disclaimer) below.
 
 ## License
