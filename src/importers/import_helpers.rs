@@ -85,6 +85,11 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
         _ => vec![4, 8, 12, 16, 19],
     };
 
+    let hit_die = cls["hd"]["faces"].as_i64().unwrap_or(-1) as i32;
+    let spellcasting_ability = cls["spellcastingAbility"].as_str();
+    let caster_progression = cls["casterProgression"].as_str();
+    let editon = cls["edition"].as_str();
+
     let row = sqlx::query!(
         r#"
         INSERT INTO classes (
@@ -96,16 +101,22 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
         ON CONFLICT (name, source_id) DO UPDATE
-            SET hit_die = EXCLUDED.hit_die, asi_levels = EXCLUDED.asi_levels,
-                spellcasting_ability = EXCLUDED.spellcasting_ability,
-                caster_progression = EXCLUDED.caster_progression,
-                weapon_proficiencies = EXCLUDED.weapon_proficiencies,
-                armor_proficiencies = EXCLUDED.armor_proficiencies
+            SET hit_die = CASE WHEN EXCLUDED.hit_die = -1 THEN classes.hit_die ELSE EXCLUDED.hit_die END,
+                asi_levels = CASE WHEN EXCLUDED.asi_levels IS NULL THEN classes.asi_levels ELSE EXCLUDED.asi_levels END,
+                spellcasting_ability = COALESCE(EXCLUDED.spellcasting_ability, classes.spellcasting_ability),
+                caster_progression = COALESCE(EXCLUDED.caster_progression, classes.caster_progression),
+                weapon_proficiencies = CASE WHEN cardinality(EXCLUDED.weapon_proficiencies) = 0 THEN classes.weapon_proficiencies ELSE EXCLUDED.weapon_proficiencies END,
+                armor_proficiencies = CASE WHEN cardinality(EXCLUDED.armor_proficiencies) = 0 THEN classes.armor_proficiencies ELSE EXCLUDED.armor_proficiencies END,
+                skill_choices = CASE WHEN EXCLUDED.skill_choices IS NULL OR EXCLUDED.skill_choices = 'null'::jsonb THEN classes.skill_choices ELSE EXCLUDED.skill_choices END,
+                starting_equipment = CASE WHEN EXCLUDED.starting_equipment IS NULL OR EXCLUDED.starting_equipment = 'null'::jsonb THEN classes.starting_equipment ELSE EXCLUDED.starting_equipment END,
+                multiclass_requirements = CASE WHEN EXCLUDED.multiclass_requirements IS NULL OR EXCLUDED.multiclass_requirements = 'null'::jsonb THEN classes.multiclass_requirements ELSE EXCLUDED.multiclass_requirements END,
+                class_table = CASE WHEN EXCLUDED.class_table IS NULL OR EXCLUDED.class_table = 'null'::jsonb THEN classes.class_table ELSE EXCLUDED.class_table END,
+                edition = COALESCE(EXCLUDED.edition, classes.edition)
         RETURNING id
         "#,
         name,
         source_id,
-        cls["hd"]["faces"].as_i64().unwrap_or(8) as i32,
+        hit_die,
         &cls["proficiency"]
             .as_array()
             .map(|a| a
@@ -113,14 +124,14 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect::<Vec<_>>())
             .unwrap_or_default(),
-        cls["spellcastingAbility"].as_str(),
-        cls["casterProgression"].as_str(),
+        spellcasting_ability,
+        caster_progression,
         cls["startingProficiencies"]["skills"],
         cls["startingEquipment"],
         cls.get("multiclassing"),
         cls["classTableGroups"],
         cls["subclassTitle"].as_str().unwrap_or("Subclass"),
-        cls["edition"].as_str(),
+        editon,
         &asi_levels,
         &cls["startingProficiencies"]["weapons"]
             .as_array()

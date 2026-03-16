@@ -113,7 +113,7 @@ pub async fn get_character_actions(
         SELECT i.name, i.properties, i.damage, i.type as item_type, i.entries 
         FROM character_inventory ci
         JOIN items i ON ci.item_id = i.id
-        WHERE ci.character_id = $1 AND ci.is_equipped = true AND i.type IN ('M', 'R')
+        WHERE ci.character_id = $1 AND ci.is_equipped = true AND split_part(i.type, '|', 1) IN ('M', 'R')
         "#,
         id
     )
