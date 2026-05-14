@@ -1,6 +1,6 @@
 use super::import_helpers::{get_source_id, upsert_source};
 use bigdecimal::FromPrimitive;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::PgPool;
 
 pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
@@ -21,11 +21,12 @@ pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
             r#"
             INSERT INTO items (
                 name, source_id, type, rarity, weight, value_cp, damage,
-                armor_class, properties, requires_attune, entries, is_magic
+                armor_class, properties, mastery, requires_attune, entries, is_magic
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             ON CONFLICT (name, source_id) DO UPDATE SET
-                entries = EXCLUDED.entries
+                entries = EXCLUDED.entries,
+                mastery = EXCLUDED.mastery
             "#,
             i["name"].as_str().unwrap_or(""),
             source_id,
@@ -40,6 +41,13 @@ pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                 .map(|d| json!({"dmg1": d, "dmgType": i["dmgType"]})),
             i["ac"].as_i64().map(|v| v as i32),
             &i["property"]
+                .as_array()
+                .map(|a| a
+                    .iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect::<Vec<_>>())
+                .unwrap_or_default(),
+            &i["mastery"]
                 .as_array()
                 .map(|a| a
                     .iter()

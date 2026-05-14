@@ -32,17 +32,17 @@ async fn main() {
         .await
         .expect("Migrations failed!!!");
 
-    let state = db::AppState { db: pool, config };
+    let state = db::AppState { db: pool, config: config.clone() };
 
     let app = Router::new()
         .nest("/api/v1", routes::all_routes())
-        .with_state(state)
+        .with_state(state.clone())
         .layer(CorsLayer::permissive())
         .layer(DefaultBodyLimit::max(5 * 1024 * 1024)); // 5mb
 
-    let addr = "0.0.0.0:8080";
-    let listener = TcpListener::bind(addr).await.unwrap();
-    tracing::info!("Listening on {addr}");
+    let addr = format!("0.0.0.0:{}", state.config.port);
+    let listener = TcpListener::bind(&addr).await.unwrap();
+    tracing::info!("Listening on {}", addr);
 
     axum::serve(listener, app).await.unwrap();
 }

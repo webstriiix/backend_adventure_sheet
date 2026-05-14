@@ -171,3 +171,117 @@ pub async fn get_class_detail(
         subclasses,
     }))
 }
+
+use serde::Serialize;
+
+#[derive(Serialize)]
+pub struct SubclassOption {
+    pub subclass_feature_id: i32,
+    pub name: String,
+    pub level: i32,
+    pub subclass_short_name: String,
+    pub subclass_source: String,
+    pub entries: serde_json::Value,
+}
+
+#[derive(Serialize)]
+pub struct ClassResources {
+    pub class_name: String,
+    pub source: String,
+    pub level: i32,
+    pub channel_divinity_uses: Option<i64>,
+    pub lay_on_hands_pool: i64,
+    pub subclass_options: Vec<SubclassOption>,
+}
+
+/// GET /api/v1/classes/:name/:source/resources/:level
+pub async fn get_class_resources(
+    State(state): State<AppState>,
+    Path((name, source, level)): Path<(String, String, i32)>,
+) -> Result<Json<ClassResources>> {
+    // Fetch class id and class_table
+    let class_row = sqlx::query!(
+        "SELECT c.id, c.class_table FROM classes c JOIN sources s ON s.id = c.source_id WHERE c.name = $1 AND s.slug = $2",
+        name,
+        source
+    )
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| AppError::NotFound(format!("Class {}/{} not found", name, source)))?;
+
+    let class_table: serde_json::Value = class_row.class_table;
+
+    // Helper: extract Channel Divinity from class_table
+    fn extract_channel_divinity(class_table: &serde_json::Value, level: i32) -> Option<i64> {
+        let groups = class_table.as_array()?;
+        for g in groups {
+            if let Some(labels) = g.get("colLabels").and_then(|v| v.as_array()) {
+                let mut col_index = None;
+                for (i, l) in labels.iter().enumerate() {
+                    if let Some(s) = l.as_str() {
+                        if s.to_lowercase().contains("channel divinity") {
+                            col_index = Some(i);
+                            break;
+                        }
+                    }
+                }
+                if let Some(ci) = col_index {
+                    let rows = g.get("rows").or_else(|| g.get("rowsSpellProgression"))?.as_array()?;
+                    if level <= 0 || (level as usize) > rows.len() { return None; }
+                    if let Some(row) = rows.get((level as usize) - 1).and_then(|r| r.as_array()) {
+                        return row.get(ci)?.as_i64();
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    let cd_uses = extract_channel_divinity(&class_table, level);
+    let loh = (level as i64) * 5;
+
+    // Find gates at this level for this class
+    let gate_rows = sqlx::query!(
+        "SELECT cf.id FROM class_features cf WHERE cf.class_id = $1 AND cf.level = $2 AND cf.is_subclass_gate = true",
+        class_row.id,
+        level
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut subclass_options: Vec<SubclassOption> = Vec::new();
+    for gate in gate_rows {
+        let gate_id = gate.id;
+        let rows = sqlx::query!(
+            r#"SELECT sf.id AS subclass_feature_id, sf.name, sf.level, sc.short_name AS subclass_short_name, ss.slug AS subclass_source, sf.entries
+               FROM class_feature_subclass_map m
+               JOIN subclass_features sf ON sf.id = m.subclass_feature_id
+               JOIN subclasses sc ON sc.id = sf.subclass_id
+               JOIN sources ss ON ss.id = sc.source_id
+               WHERE m.class_feature_id = $1"#,
+            gate_id
+        )
+        .fetch_all(&state.db)
+        .await?;
+
+        for r in rows {
+            subclass_options.push(SubclassOption {
+                subclass_feature_id: r.subclass_feature_id,
+                name: r.name,
+                level: r.level,
+                subclass_short_name: r.subclass_short_name,
+                subclass_source: r.subclass_source,
+                entries: r.entries,
+            });
+        }
+    }
+
+    Ok(Json(ClassResources {
+        class_name: name,
+        source,
+        level,
+        channel_divinity_uses: cd_uses,
+        lay_on_hands_pool: loh,
+        subclass_options,
+    }))
+}

@@ -1262,5 +1262,212 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `POST` | `/characters/{id}/long-rest` | Yes | Perform long rest |
 | `GET` | `/characters/{id}/available-feats` | Yes | Get feats available to character |
 | `POST` | `/characters/{id}/asi-choice` | Yes | Increase ability scores or pick feat |
+| `GET` | `/characters/{id}/proficiencies` | Yes | List character proficiencies |
+| `POST` | `/characters/{id}/proficiencies` | Yes | Add/update proficiency or expertise |
+| `PATCH` | `/characters/{id}/proficiencies/{prof_id}` | Yes | Change proficiency type |
+| `DELETE` | `/characters/{id}/proficiencies/{prof_id}` | Yes | Remove proficiency |
 | `POST` | `/import` | No | Bulk import data |
 | `POST` | `/import/spell-classes` | No | Import spell-class mappings |
+
+---
+
+## Race Options (Frontend contract)
+
+These endpoints expose race/subrace selectable options (cantrips, bonus feats, variable traits) and allow saving a character's selections.
+
+### `GET /races/{name}/{source}/options`
+
+Response 200 (array of race options):
+```json
+[
+  {
+    "id": 42,
+    "race_id": 3,
+    "subrace_id": null,
+    "source_id": 1,
+    "option_type": "cantrip",
+    "choices": [{"name":"shillelagh"},{"name":"minor illusion"}],
+    "min_choose": 1,
+    "max_choose": 1,
+    "note": "Pick one cantrip"
+  }
+]
+```
+
+Notes:
+- `choices` === `null` means free-form choice (frontend must still enforce min/max).
+- Frontend should display choices and enforce `min_choose`/`max_choose`.
+
+### `POST /characters/{character_id}/race-options`
+
+Save a player's selection for a race option.
+
+Request body (single choice):
+```json
+{ "race_option_id": 42, "selection": { "name": "shillelagh" } }
+```
+Multi-choice example:
+```json
+{ "race_option_id": 99, "selection": [{"name":"mending"},{"name":"guidance"}] }
+```
+
+Response 200 (persisted selection):
+```json
+{
+  "id": 7,
+  "character_id": "550e8400-e29b-41d4-a716-446655440000",
+  "race_option_id": 42,
+  "selection": { "name": "shillelagh" }
+}
+```
+
+Errors:
+- `400` — invalid selection, violates min/max or not in choices
+- `401`/`403` — auth/ownership failures
+- `404` — race option not found
+
+---
+
+## Character Proficiencies (Auth Required)
+
+### `GET /characters/{id}/proficiencies`
+
+List all manually assigned proficiencies and expertise for a character.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "character_id": "550e8400-e29b-41d4-a716-446655440000",
+    "category": "skill",
+    "name": "athletics",
+    "proficiency_type": "proficiency"
+  },
+  {
+    "id": 2,
+    "character_id": "550e8400-...",
+    "category": "saving_throw",
+    "name": "wisdom",
+    "proficiency_type": "expertise"
+  }
+]
+```
+
+---
+
+### `POST /characters/{id}/proficiencies`
+
+Add or update a proficiency/expertise entry. Uses upsert — if the same `(category, name)` already exists for this character, the `proficiency_type` is updated.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Request Body:**
+```json
+{
+  "category": "skill",
+  "name": "athletics",
+  "proficiency_type": "expertise"
+}
+```
+
+| Field | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `category` | string | Yes | — | `"saving_throw"` or `"skill"` |
+| `name` | string | Yes | — | Lowercase name (e.g. `"athletics"`, `"wisdom"`) |
+| `proficiency_type` | string | No | `"proficiency"` | `"proficiency"` or `"expertise"` |
+
+**Response:** `200 OK` — Single proficiency object.
+
+**Errors:**
+- `400` — Invalid category or proficiency_type value
+
+---
+
+### `PATCH /characters/{id}/proficiencies/{prof_id}`
+
+Change the proficiency_type of an existing entry.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `prof_id` | integer | Proficiency row ID |
+
+**Request Body:**
+```json
+{
+  "proficiency_type": "expertise"
+}
+```
+
+**Response:** `200 OK` — Updated proficiency object.
+
+**Errors:**
+- `404` — Character proficiency not found
+
+---
+
+### `DELETE /characters/{id}/proficiencies/{prof_id}`
+
+Remove a proficiency entry.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+| `prof_id` | integer | Proficiency row ID |
+
+**Response:** `204 No Content`
+
+**Errors:**
+- `404` — Character proficiency not found
+
+---
+
+## Class Resources (Frontend contract)
+
+Endpoint returns computed resources like Channel Divinity uses and Lay on Hands pool for a given level.
+
+### `GET /classes/{name}/{source}/resources/{level}`
+
+Example: `GET /classes/Paladin/PHB/resources/11`
+
+Response 200:
+```json
+{
+  "class_name":"Paladin",
+  "source":"PHB",
+  "level": 11,
+  "lay_on_hands_pool": 55,
+  "channel_divinity_uses": 2,
+  "subclass_options": [
+    {
+      "gate_feature_id": 210,
+      "gate_feature_name": "Sacred Oath",
+      "choices": [
+        {"subclass_feature_id": 501, "name": "Oath of Devotion"},
+        {"subclass_feature_id": 502, "name": "Oath of the Ancients"}
+      ]
+    }
+  ]
+}
+```
+
+Notes:
+- `lay_on_hands_pool` is computed as `level * 5` for paladins.
+- `channel_divinity_uses` is read from the class `class_table` progression.
+
+---

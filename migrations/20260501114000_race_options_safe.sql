@@ -1,0 +1,28 @@
+-- Safe migration to ensure race_options and character_race_options exist
+-- Uses IF NOT EXISTS so re-running is safe even if a prior migration was applied/modified
+
+CREATE TABLE IF NOT EXISTS race_options (
+    id SERIAL PRIMARY KEY,
+    race_id INT REFERENCES races(id),
+    subrace_id INT REFERENCES subraces(id),
+    source_id INT NOT NULL REFERENCES sources(id),
+    option_type TEXT NOT NULL, -- 'feat'|'cantrip'|'spell'|'skill'|'darkvision'|'variable_trait'
+    choices JSONB,            -- array of choice objects, or NULL meaning free-form choice
+    min_choose INT NOT NULL DEFAULT 1,
+    max_choose INT NOT NULL DEFAULT 1,
+    note TEXT,
+    UNIQUE(race_id, subrace_id, source_id, option_type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_race_options_race_subrace ON race_options(race_id, subrace_id);
+
+-- Persist character selections for these options
+CREATE TABLE IF NOT EXISTS character_race_options (
+    id SERIAL PRIMARY KEY,
+    character_id UUID NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+    race_option_id INT NOT NULL REFERENCES race_options(id) ON DELETE CASCADE,
+    selection JSONB NOT NULL,
+    UNIQUE(character_id, race_option_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_character_race_options_char ON character_race_options(character_id);

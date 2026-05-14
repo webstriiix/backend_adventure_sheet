@@ -18,7 +18,8 @@ pub fn all_routes() -> Router<AppState> {
 
     let class_routes = Router::new()
         .route("/classes", get(classes::list_classes))
-        .route("/classes/{name}/{source}", get(classes::get_class_detail));
+        .route("/classes/{name}/{source}", get(classes::get_class_detail))
+        .route("/classes/{name}/{source}/resources/{level}", get(classes::get_class_resources));
 
     let compendium_routes = Router::new()
         .route("/spells", get(compendium::list_spells))
@@ -26,6 +27,8 @@ pub fn all_routes() -> Router<AppState> {
         .route("/feats", get(compendium::list_feats))
         .route("/monsters", get(compendium::list_monsters))
         .route("/races", get(compendium::list_races))
+        .route("/races/{name}/{source}/options", get(compendium::list_race_options))
+        .route("/subraces", get(compendium::list_subraces))
         .route("/backgrounds", get(compendium::list_backgrounds))
         .route(
             "/optional-features",
@@ -121,6 +124,21 @@ pub fn all_routes() -> Router<AppState> {
         .route(
             "/characters/{id}/actions",
             get(characters::get_character_actions),
+        )
+        // Character proficiencies
+        .route(
+            "/characters/{id}/proficiencies",
+            get(characters::list_character_proficiencies)
+                .post(characters::add_character_proficiency),
+        )
+        .route(
+            "/characters/{id}/proficiencies/{prof_id}",
+            patch(characters::update_character_proficiency)
+                .delete(characters::remove_character_proficiency),
+        )
+        .route(
+            "/characters/{id}/race-options",
+            post(characters::add_character_race_option),
         );
 
     let admin_routes = Router::new()

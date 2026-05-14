@@ -1,7 +1,8 @@
 use axum::{
     Json,
-    extract::{Query, State},
+    extract::{Query, State, Path},
 };
+use crate::error::AppError;
 use serde::Deserialize;
 
 use crate::{
@@ -9,7 +10,7 @@ use crate::{
     error::Result,
     models::{
         backgrounds::Background, feats::Feat, items::Item, monsters::Monster,
-        optional_features::OptionalFeature, races::Race, spells::Spell,
+        optional_features::OptionalFeature, races::{Race, Subrace}, spells::Spell,
     },
 };
 
@@ -115,6 +116,64 @@ pub async fn list_races(
         "#,
         q.name.as_ref().map(|n| format!("%{}%", n)),
         q.source,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+//  Subraces
+
+pub async fn list_subraces(
+    State(state): State<AppState>,
+    Query(q): Query<ListQuery>,
+) -> Result<Json<Vec<Subrace>>> {
+    let rows = sqlx::query_as!(
+        Subrace,
+        r#"
+        SELECT s.* FROM subraces s
+        JOIN sources src ON src.id = s.source_id
+        JOIN races r ON r.id = s.race_id
+        WHERE ($1::text IS NULL OR s.name ILIKE $1)
+          AND ($2::text IS NULL OR src.slug = $2)
+        ORDER BY s.name
+        "#,
+        q.name.as_ref().map(|n| format!("%{}%", n)),
+        q.source,
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows))
+}
+
+// Race options
+
+pub async fn list_race_options(
+    State(state): State<AppState>,
+    Path((name, source)): Path<(String, String)>,
+) -> Result<Json<Vec<crate::models::race_options::RaceOption>>> {
+    // find race id
+    let row = sqlx::query!(
+        "SELECT r.id FROM races r JOIN sources s ON s.id = r.source_id WHERE r.name = $1 AND s.slug = $2",
+        name,
+        source,
+    )
+    .fetch_optional(&state.db)
+    .await?;
+
+    let race_id = match row { Some(r) => r.id, None => return Err(AppError::NotFound(format!("Race {}/{} not found", name, source))) };
+
+    let rows = sqlx::query_as!(
+        crate::models::race_options::RaceOption,
+        r#"
+        SELECT ro.* FROM race_options ro
+        WHERE (ro.race_id = $1 OR ro.race_id IS NULL) AND (ro.source_id = (SELECT id FROM sources WHERE slug = $2))
+        ORDER BY ro.id
+        "#,
+        race_id,
+        source
     )
     .fetch_all(&state.db)
     .await?;

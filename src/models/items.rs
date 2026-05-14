@@ -14,6 +14,7 @@ pub struct Item {
     pub damage: Option<Value>, // JSONB
     pub armor_class: Option<i32>,
     pub properties: Vec<String>,
+    pub mastery: Vec<String>,
     pub requires_attune: bool,
     pub entries: Option<Value>, // JSONB
     pub is_magic: bool,
