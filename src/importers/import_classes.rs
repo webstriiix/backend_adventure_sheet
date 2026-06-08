@@ -114,13 +114,18 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                     .and_then(|o| o["href"]["url"].as_str())
                     .map(String::from);
 
+                let sc_additional_spells = sc.get("additionalSpells");
+
                 sqlx::query!(
                     r#"
                     INSERT INTO subclasses
-                        (name, short_name, source_id, class_id, unlock_level, fluff_image_url)
-                    VALUES ($1, $2, $3, $4, $5, $6)
+                        (name, short_name, source_id, class_id, unlock_level, fluff_image_url, additional_spells)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     ON CONFLICT (short_name, source_id, class_id)
-                    DO UPDATE SET name = EXCLUDED.name, fluff_image_url = EXCLUDED.fluff_image_url
+                    DO UPDATE SET
+                        name = EXCLUDED.name,
+                        fluff_image_url = EXCLUDED.fluff_image_url,
+                        additional_spells = CASE WHEN EXCLUDED.additional_spells IS NULL OR EXCLUDED.additional_spells = 'null'::jsonb THEN subclasses.additional_spells ELSE EXCLUDED.additional_spells END
                     "#,
                     sc["name"].as_str().unwrap_or(""),
                     sc["shortName"].as_str().unwrap_or(""),
@@ -128,6 +133,7 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                     class_id,
                     unlock_level,
                     fluff_image,
+                    sc_additional_spells,
                 )
                 .execute(pool)
                 .await?;

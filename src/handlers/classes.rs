@@ -38,6 +38,8 @@ pub async fn list_classes(
             c.starting_equipment,
             c.multiclass_requirements,
             c.class_table,
+            c.spell_slots,
+            c.additional_spells,
             c.subclass_title,
             c.edition,
             c.asi_levels
@@ -71,7 +73,7 @@ pub async fn get_class_detail(
             c.hit_die, c.proficiency_saves, c.spellcasting_ability,
             c.caster_progression, c.weapon_proficiencies, c.armor_proficiencies,
             c.skill_choices, c.starting_equipment, c.multiclass_requirements,
-            c.class_table, c.subclass_title, c.edition, c.asi_levels
+            c.class_table, c.spell_slots, c.additional_spells, c.subclass_title, c.edition, c.asi_levels
         FROM classes c
         JOIN sources s ON s.id = c.source_id
         WHERE c.name = $1 AND s.slug = $2
@@ -111,7 +113,7 @@ pub async fn get_class_detail(
             s.slug   AS source_slug,
             c.name   AS class_name,
             cs.slug  AS class_source,
-            sc.unlock_level, sc.fluff_text, sc.fluff_image_url
+            sc.unlock_level, sc.fluff_text, sc.fluff_image_url, sc.additional_spells
         FROM subclasses sc
         JOIN classes c  ON c.id  = sc.class_id
         JOIN sources s  ON s.id  = sc.source_id

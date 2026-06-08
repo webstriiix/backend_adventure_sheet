@@ -17,6 +17,8 @@ pub struct Class {
     pub starting_equipment: Value,
     pub multiclass_requirements: Option<Value>,
     pub class_table: Value, // JSONB — level/slot progression
+    pub spell_slots: Option<Value>, // JSONB — rowsSpellProgression extracted from classTableGroups
+    pub additional_spells: Option<Value>, // JSONB — always-prepared/known spells from class features
     pub subclass_title: String,
     pub edition: Option<String>,
     pub asi_levels: Option<Vec<i32>>,
@@ -46,6 +48,7 @@ pub struct Subclass {
     pub unlock_level: i32,
     pub fluff_text: Option<String>,
     pub fluff_image_url: Option<String>,
+    pub additional_spells: Option<Value>, // JSONB — subclass-specific always-prepared/known spells
 }
 
 /// Feature belonging to specific class

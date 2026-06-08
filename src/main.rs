@@ -1,6 +1,6 @@
 use axum::{Router, extract::DefaultBodyLimit};
 use tokio::net::TcpListener;
-use tower_http::cors::CorsLayer;
+use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod config;
@@ -38,7 +38,8 @@ async fn main() {
         .nest("/api/v1", routes::all_routes())
         .with_state(state.clone())
         .layer(CorsLayer::permissive())
-        .layer(DefaultBodyLimit::max(5 * 1024 * 1024)); // 5mb
+        .layer(DefaultBodyLimit::max(5 * 1024 * 1024)) // 5mb
+        .layer(TraceLayer::new_for_http());
 
     let addr = format!("0.0.0.0:{}", state.config.port);
     let listener = TcpListener::bind(&addr).await.unwrap();

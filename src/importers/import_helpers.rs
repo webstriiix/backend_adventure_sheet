@@ -77,6 +77,17 @@ pub async fn get_spell_id(pool: &PgPool, name: &str, source_slug: &str) -> anyho
     Ok(row.id)
 }
 
+fn extract_spell_slots(class_table_groups: &Value) -> Value {
+    if let Some(groups) = class_table_groups.as_array() {
+        for group in groups {
+            if let Some(rows) = group.get("rowsSpellProgression") {
+                return rows.clone();
+            }
+        }
+    }
+    Value::Null
+}
+
 pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow::Result<i32> {
     let name = cls["name"].as_str().unwrap_or("");
     let asi_levels = match name {
@@ -89,6 +100,8 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
     let spellcasting_ability = cls["spellcastingAbility"].as_str();
     let caster_progression = cls["casterProgression"].as_str();
     let editon = cls["edition"].as_str();
+    let spell_slots = extract_spell_slots(&cls["classTableGroups"]);
+    let additional_spells = cls.get("additionalSpells");
 
     let row = sqlx::query!(
         r#"
@@ -97,9 +110,10 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
             spellcasting_ability, caster_progression,
             skill_choices, starting_equipment, multiclass_requirements,
             class_table, subclass_title, edition, asi_levels,
-            weapon_proficiencies, armor_proficiencies
+            weapon_proficiencies, armor_proficiencies,
+            spell_slots, additional_spells
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
         ON CONFLICT (name, source_id) DO UPDATE
             SET hit_die = CASE WHEN EXCLUDED.hit_die = -1 THEN classes.hit_die ELSE EXCLUDED.hit_die END,
                 asi_levels = CASE WHEN EXCLUDED.asi_levels IS NULL THEN classes.asi_levels ELSE EXCLUDED.asi_levels END,
@@ -111,7 +125,9 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
                 starting_equipment = CASE WHEN EXCLUDED.starting_equipment IS NULL OR EXCLUDED.starting_equipment = 'null'::jsonb THEN classes.starting_equipment ELSE EXCLUDED.starting_equipment END,
                 multiclass_requirements = CASE WHEN EXCLUDED.multiclass_requirements IS NULL OR EXCLUDED.multiclass_requirements = 'null'::jsonb THEN classes.multiclass_requirements ELSE EXCLUDED.multiclass_requirements END,
                 class_table = CASE WHEN EXCLUDED.class_table IS NULL OR EXCLUDED.class_table = 'null'::jsonb THEN classes.class_table ELSE EXCLUDED.class_table END,
-                edition = COALESCE(EXCLUDED.edition, classes.edition)
+                edition = COALESCE(EXCLUDED.edition, classes.edition),
+                spell_slots = CASE WHEN EXCLUDED.spell_slots IS NULL OR EXCLUDED.spell_slots = 'null'::jsonb THEN classes.spell_slots ELSE EXCLUDED.spell_slots END,
+                additional_spells = CASE WHEN EXCLUDED.additional_spells IS NULL OR EXCLUDED.additional_spells = 'null'::jsonb THEN classes.additional_spells ELSE EXCLUDED.additional_spells END
         RETURNING id
         "#,
         name,
@@ -147,6 +163,8 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
                 .filter_map(|v| v.as_str().map(String::from))
                 .collect::<Vec<_>>())
             .unwrap_or_default(),
+        &spell_slots,
+        additional_spells,
     )
     .fetch_one(pool)
     .await?;

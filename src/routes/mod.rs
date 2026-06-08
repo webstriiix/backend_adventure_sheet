@@ -49,7 +49,8 @@ pub fn all_routes() -> Router<AppState> {
         // Character classes and leveling
         .route(
             "/characters/{id}/classes",
-            post(characters::add_character_class),
+            get(characters::list_character_classes)
+                .post(characters::add_character_class),
         )
         .route(
             "/characters/{id}/classes/{class_id}",

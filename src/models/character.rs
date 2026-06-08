@@ -109,6 +109,19 @@ pub struct ShortRestRequest {
     pub hit_dice_spent: std::collections::HashMap<i32, i32>, // mapping die_size to amount spent
 }
 
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CharacterClassInfo {
+    pub class_id: i32,
+    pub class_name: String,
+    pub class_source: String,
+    pub level: i32,
+    pub is_primary: bool,
+    pub subclass_id: Option<i32>,
+    pub subclass_name: Option<String>,
+    pub subclass_short_name: Option<String>,
+    pub subclass_source: Option<String>,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct AddClassRequest {
     pub class_id: i32,

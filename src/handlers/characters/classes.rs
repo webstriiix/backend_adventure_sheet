@@ -2,7 +2,9 @@ use super::{get_user_id, verify_character_ownership};
 use crate::{
     db::AppState,
     error::{AppError, Result},
-    models::character::{AddClassRequest, Character, UpdateClassLevelRequest},
+    models::character::{
+        AddClassRequest, Character, CharacterClassInfo, UpdateClassLevelRequest,
+    },
 };
 use axum::{
     Json,
@@ -10,6 +12,44 @@ use axum::{
     http::HeaderMap,
 };
 use uuid::Uuid;
+
+// GET /characters/:id/classes
+pub async fn list_character_classes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(character_id): Path<Uuid>,
+) -> Result<Json<Vec<CharacterClassInfo>>> {
+    let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let rows = sqlx::query_as!(
+        CharacterClassInfo,
+        r#"
+        SELECT
+            cc.class_id,
+            c.name AS class_name,
+            s.slug AS class_source,
+            cc.level,
+            cc.is_primary,
+            cc.subclass_id,
+            sc.name AS "subclass_name?",
+            sc.short_name AS "subclass_short_name?",
+            ss.slug AS "subclass_source?"
+        FROM character_classes cc
+        JOIN classes c  ON c.id  = cc.class_id
+        JOIN sources s  ON s.id  = c.source_id
+        LEFT JOIN subclasses sc ON sc.id = cc.subclass_id
+        LEFT JOIN sources ss ON ss.id = sc.source_id
+        WHERE cc.character_id = $1
+        ORDER BY cc.is_primary DESC, c.name
+        "#,
+        character_id
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows))
+}
 
 // POST /characters/:id/classes
 pub async fn add_character_class(

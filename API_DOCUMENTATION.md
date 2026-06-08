@@ -156,11 +156,18 @@ List all classes.
     "starting_equipment": {},
     "multiclass_requirements": {},
     "class_table": [],
+    "spell_slots": [[2,0,0,0,0],[2,0,0,0,0],...],
+    "additional_spells": [{"prepared":{"2":["divine smite|xphb"],"5":["find steed|xphb"]}}],
     "subclass_title": "Sacred Oath",
     "edition": null
   }
 ]
 ```
+
+**Fields:**
+- `class_table` — Raw `classTableGroups` from the source JSON (spell slot tables, channel divinity progression, etc.)
+- `spell_slots` — Extracted `rowsSpellProgression` array; a 2D array of `[level][spell_level]` where `[character_level-1]` gives max slots per spell level (1–9 for full casters, 1–5 for half casters). `null` for non-spellcasters. Use this instead of hardcoding spell slot numbers.
+- `additional_spells` — Always-prepared/known/innate spells granted by class features (e.g., Paladin's Divine Smite at level 2, Find Steed at level 5). These don't count against the spells-prepared limit.
 
 ---
 
@@ -194,6 +201,8 @@ Get full class detail including all features and subclasses.
     "starting_equipment": {},
     "multiclass_requirements": null,
     "class_table": [],
+    "spell_slots": [[2,0,0,0,0],[2,0,0,0,0],...],
+    "additional_spells": null,
     "subclass_title": "Sacred Oath",
     "edition": null
   },
@@ -219,7 +228,8 @@ Get full class detail including all features and subclasses.
         "class_source": "PHB",
         "unlock_level": 3,
         "fluff_text": null,
-        "fluff_image_url": null
+        "fluff_image_url": null,
+        "additional_spells": [{"prepared": {"3":["protection from evil and good","sanctuary"],"5":["lesser restoration","zone of truth"],...}}]
       },
       "features": [
         {
@@ -241,6 +251,11 @@ Get full class detail including all features and subclasses.
 
 **Errors:**
 - `404` — Class not found
+
+**Notes:**
+- `class.spell_slots` is a 2D JSON array: `spell_slots[character_level - 1]` gives the max spell slots for that level (e.g., `spell_slots[6]` for level 7).
+- `class.additional_spells` lists class-granted spells that are always prepared/known (don't count against limit).
+- Each `subclass.additional_spells` lists subclass-granted always-prepared spells (domain/oath/circle spells).
 
 ---
 
@@ -620,6 +635,44 @@ Aggregates all combat actions for a character into D&D Beyond-style buckets (all
 ---
 
 ## Character Classes & Leveling (Auth Required)
+
+### `GET /characters/{id}/classes`
+
+List all classes for a character, including subclass info.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "class_id": 17,
+    "class_name": "Paladin",
+    "class_source": "XPHB",
+    "level": 3,
+    "is_primary": true,
+    "subclass_id": 192,
+    "subclass_name": "Oath of Glory",
+    "subclass_short_name": "Glory",
+    "subclass_source": "XPHB"
+  }
+]
+```
+
+**Notes:**
+- The primary class is listed first.
+- `subclass_*` fields are `null` until a subclass is assigned via `PATCH`.
+- Use `class_name` + `class_source` to call `GET /classes/{name}/{source}` and get all class/subclass features.
+- Then filter the subclass's `features[]` by `level <= character's level` to get the features available at that level.
+
+**Errors:**
+- `404` — Character not found or not owned by user
+
+---
 
 ### `POST /characters/{id}/classes`
 
@@ -1249,6 +1302,7 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `POST` | `/characters/{id}/inventory` | Yes | Add item |
 | `PUT` | `/characters/{id}/inventory/{inv_id}` | Yes | Update item |
 | `DELETE` | `/characters/{id}/inventory/{inv_id}` | Yes | Remove item |
+| `GET` | `/characters/{id}/classes` | Yes | List character classes with subclass info |
 | `POST` | `/characters/{id}/classes` | Yes | Add class (multiclass) |
 | `PATCH` | `/characters/{id}/classes/{class_id}` | Yes | Update class level/subclass |
 | `PATCH` | `/characters/{id}/death-saves` | Yes | Update death saves |
@@ -1469,5 +1523,7 @@ Response 200:
 Notes:
 - `lay_on_hands_pool` is computed as `level * 5` for paladins.
 - `channel_divinity_uses` is read from the class `class_table` progression.
+- **Spell slots** per level are available from `GET /classes/{name}/{source}` → `class.spell_slots[level-1]`. No need to hardcode them.
+- **Free spells** that are always prepared and don't count against the limit are in `class.additional_spells` (class-level) and each subclass's `subclass.additional_spells`. The `prepared` key indicates spells always prepared; `known` for always known; `innate` for innate casting.
 
 ---
