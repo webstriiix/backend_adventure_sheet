@@ -420,16 +420,26 @@ List backgrounds. **No result limit.**
 [
   {
     "id": 1,
-    "name": "Soldier",
+    "name": "Sage",
     "source_id": 1,
-    "skill_proficiencies": [{"athletics": true, "intimidation": true}],
-    "tool_proficiencies": [{"gaming set": true, "vehicles (land)": true}],
+    "skill_proficiencies": [{"arcana": true, "history": true}],
+    "tool_proficiencies": [{"calligrapher's supplies": true}],
     "language_count": 0,
     "starting_equipment": {},
+    "ability_bonuses": [
+      {"choose": {"weighted": {"from": ["con","int","wis"], "weights": [2, 1]}}},
+      {"choose": {"weighted": {"from": ["con","int","wis"], "weights": [1, 1, 1]}}}
+    ],
+    "grants_bonus_feat": true,
+    "granted_feat_id": 42,
     "entries": []
   }
 ]
 ```
+
+**Fields:**
+- `ability_bonuses` — Weighted choice format. Each element is a `"choose"` block with a `"weighted"` distribution. The player picks between the options (e.g. +2/+1 spread across two abilities, or +1/+1/+1 across all three). Abilities listed in `"from"` are the allowed pool.
+- `granted_feat_id` — FK to the `feats` table, populated automatically from `{@feat ...}` references in the background's entries during import. `null` if the background grants no feat.
 
 ---
 
@@ -576,12 +586,68 @@ Get a single character by UUID.
 
 Update a character.
 
-**Request Body:** Same shape as create. (`class_id` is accepted but **not used** in the update query.)
+**Request Body:** Same general shape as create, with additions:
+
+```json
+{
+  "name": "Guan Yu",
+  "class_id": 17,
+  "subclass_id": 192,
+  "race_id": 1,
+  "subrace_id": null,
+  "background_id": 1,
+  "str": 16,
+  "dex": 10,
+  "con": 14,
+  "int": 8,
+  "wis": 12,
+  "cha": 15,
+  "max_hp": 94,
+  "current_hp": 94,
+  "temp_hp": 0,
+  "experience_pts": 23000,
+  "inspiration": false,
+  "notes": null,
+  "death_saves_successes": null,
+  "death_saves_failures": null,
+  "cp": null,
+  "sp": null,
+  "ep": null,
+  "gp": null,
+  "pp": null
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | Yes | Character name |
+| `class_id` | integer | No | Set/change primary class. Inserts or updates the `character_classes` row and marks it as primary. |
+| `subclass_id` | integer | No | Set/change subclass on the primary class. Validates the subclass belongs to that class and the level requirement is met. |
+| `experience_pts` | integer | Yes | Total XP |
+| `race_id` | integer | No | Race FK |
+| `subrace_id` | integer | No | Subrace FK |
+| `background_id` | integer | No | Background FK |
+| `str`-`cha` | integer | Yes | Ability scores |
+| `max_hp` | integer | Yes | Max hit points |
+| `current_hp` | integer | Yes | Current hit points |
+| `temp_hp` | integer | Yes | Temporary hit points (default `0`) |
+| `inspiration` | boolean | No | Inspiration flag (null = keep current) |
+| `notes` | string | No | Notes (null = keep current) |
+| `death_saves_successes` | integer | No | Death save successes (null = keep current) |
+| `death_saves_failures` | integer | No | Death save failures (null = keep current) |
+| `cp`-`pp` | integer | No | Currency amounts (null = keep current) |
 
 **Response:** `200 OK` — Updated character object.
 
 **Errors:**
+- `400` — Subclass not found for this class, or level requirement not met
+- `400` — Character has no primary class (when setting subclass)
 - `404` — Character not found or access denied
+
+**Notes:**
+- `class_id` and `subclass_id` can be used together to change both class and subclass in one call.
+- If you only want to change the subclass, send `"subclass_id": <id>` without `class_id`.
+- For multiclass level/subclass adjustments, use `PATCH /characters/{id}/classes/{class_id}` instead.
 
 ---
 

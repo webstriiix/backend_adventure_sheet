@@ -70,6 +70,7 @@ pub struct CreateCharacter {
 pub struct UpdateCharacter {
     pub name: String,
     pub class_id: Option<i32>,
+    pub subclass_id: Option<i32>,
     pub experience_pts: i32,
     pub race_id: Option<i32>,
     pub subrace_id: Option<i32>,

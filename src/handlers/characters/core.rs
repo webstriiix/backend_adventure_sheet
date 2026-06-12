@@ -150,12 +150,10 @@ pub async fn create_character(
         }
     }
 
-    // Insert background feat if granted by background and provided
-    if let (Some(background_id), Some(bg_feat_id)) =
-        (payload.background_id, payload.background_feat_id)
-    {
+    // Insert background feat if granted by background
+    if let Some(background_id) = payload.background_id {
         let bg = sqlx::query!(
-            "SELECT grants_bonus_feat FROM backgrounds WHERE id = $1",
+            "SELECT grants_bonus_feat, granted_feat_id FROM backgrounds WHERE id = $1",
             background_id
         )
         .fetch_optional(&mut *tx)
@@ -164,10 +162,12 @@ pub async fn create_character(
             "Background not found".into(),
         ))?;
 
-        if bg.grants_bonus_feat.unwrap_or(false) {
+        let feat_id_to_grant = payload.background_feat_id.or(bg.granted_feat_id);
+
+        if let Some(feat_id) = feat_id_to_grant {
             let feat = sqlx::query!(
                 "SELECT has_uses, recharge_on FROM feats WHERE id = $1",
-                bg_feat_id
+                feat_id
             )
             .fetch_optional(&mut *tx)
             .await?
@@ -184,16 +184,16 @@ pub async fn create_character(
                 VALUES ($1, $2, $3, $4, $5, 'background')
                 "#,
                 char_id,
-                bg_feat_id,
+                feat_id,
                 max_uses,
                 max_uses,
                 feat.recharge_on,
             )
             .execute(&mut *tx)
             .await?;
-        } else {
+        } else if bg.grants_bonus_feat.unwrap_or(false) {
             return Err(crate::error::AppError::BadRequest(
-                "Selected background does not grant a bonus feat".into(),
+                "Selected background grants a bonus feat, but no feat was provided".into(),
             ));
         }
     }
@@ -294,6 +294,45 @@ pub async fn update_character(
             "UPDATE character_classes SET is_primary = (class_id = $2) WHERE character_id = $1",
             updated.id,
             class_id
+        )
+        .execute(&state.db)
+        .await?;
+    }
+
+    // Update subclass on primary class if provided
+    if let Some(subclass_id) = payload.subclass_id {
+        let primary = sqlx::query!(
+            "SELECT class_id, level FROM character_classes WHERE character_id = $1 AND is_primary = true",
+            updated.id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound(
+            "Character has no primary class".into(),
+        ))?;
+
+        let subclass = sqlx::query!(
+            "SELECT unlock_level FROM subclasses WHERE id = $1 AND class_id = $2",
+            subclass_id,
+            primary.class_id
+        )
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound(
+            "Subclass not found for this class".into(),
+        ))?;
+
+        if primary.level < subclass.unlock_level {
+            return Err(AppError::BadRequest(format!(
+                "This subclass unlocks at level {}",
+                subclass.unlock_level
+            )));
+        }
+
+        sqlx::query!(
+            "UPDATE character_classes SET subclass_id = $1 WHERE character_id = $2 AND is_primary = true",
+            subclass_id,
+            updated.id
         )
         .execute(&state.db)
         .await?;
