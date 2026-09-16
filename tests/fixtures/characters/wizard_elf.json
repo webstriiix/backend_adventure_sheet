@@ -1,0 +1,11 @@
+{
+  "name": "Test Wizard",
+  "class": "Wizard",
+  "race": "High Elf",
+  "level": 4,
+  "skills": {
+    "class": ["Arcana", "History"],
+    "species": ["Perception"],
+    "feat": []
+  }
+}

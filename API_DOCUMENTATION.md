@@ -914,7 +914,130 @@ Apply an Ability Score Improvement (ASI) or choose a Feat for a given character 
 
 **Errors:**
 - `400` — Cannot increase ability scores by more than 2
+- `400` — Level is not a valid ASI level for this class (checked against class's `asi_levels`)
+- `400` — ASI choice already exists for this level (prevents double-spending)
 - `404` — Feat or Character not found
+
+---
+
+### `GET /characters/{id}/asi-history`
+
+Get the history of all ASI/feat choices a character has made, ordered by level.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "character_id": "550e8400-...",
+    "level": 4,
+    "bump_str": 2,
+    "bump_dex": 0,
+    "bump_con": 0,
+    "bump_int": 0,
+    "bump_wis": 0,
+    "bump_cha": 0,
+    "feat_id": null,
+    "created_at": "2026-07-20T10:00:00Z"
+  }
+]
+```
+
+**Fields:**
+- `level` — Character level at which this ASI/feat was taken
+- `bump_*` — The ability score increases applied
+- `feat_id` — If the choice was a feat instead of ASI, this references the feat
+
+---
+
+### `GET /characters/{id}/progression`
+
+Get the character's full progression manifest — a list of decision points for each level 1–20. Shows which ASI, weapon mastery, and other choices are available, pending, or already completed.
+
+**Path Parameters:**
+
+| Param | Type | Description |
+|---|---|---|
+| `id` | UUID | Character ID |
+
+**Response:** `200 OK`
+```json
+{
+  "character_id": "550e8400-...",
+  "total_level": 6,
+  "class_name": "Fighter",
+  "class_source": "XPHB",
+  "decision_points": [
+    {
+      "level": 1,
+      "choice_type": "weapon_mastery",
+      "required_count": 3,
+      "current_choices": [
+        { "id": "weapon_mastery:1", "description": "Cleave" },
+        { "id": "weapon_mastery:2", "description": "Push" }
+      ],
+      "status": "partial"
+    },
+    {
+      "level": 4,
+      "choice_type": "asi",
+      "required_count": 1,
+      "current_choices": [
+        { "id": "asi:1", "description": "Str +2" }
+      ],
+      "status": "complete"
+    },
+    {
+      "level": 6,
+      "choice_type": "asi",
+      "required_count": 1,
+      "current_choices": [],
+      "status": "pending"
+    }
+  ]
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `total_level` | integer | Sum of all class levels for the character |
+| `class_name` | string | Primary class name |
+| `class_source` | string | Primary class source slug |
+| `decision_points[]` | array | One entry per level where a choice is available |
+
+**Decision Point Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `level` | integer | Character level |
+| `choice_type` | string | `"asi"` or `"weapon_mastery"` |
+| `required_count` | integer | Number of choices needed at this level |
+| `current_choices` | array | Existing choices already recorded |
+| `status` | string | `"pending"`, `"partial"`, or `"complete"` |
+
+**Choice Detail Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `id` | string | Identifier in the form `"asi:{id}"`, `"feat:{id}"`, `"character_feat:{id}"` or `"weapon_mastery:{id}"` |
+| `description` | string | Human-readable summary of what was chosen |
+
+**How ASI levels are determined:**
+- ASI levels come from the class's `asi_levels` column (per-class, e.g. Fighter `[4,6,8,12,14,16,19]`, Rogue `[4,8,10,12,16,18]`)
+- Choices are matched from `character_asi_choices` and `character_feats` (ASI-sourced) by level
+
+**How Weapon Mastery levels are determined:**
+- Parsed from the class's `class_table` JSONB — detects levels where the mastery count changes
+- For Fighter, mastery count increases at levels 1, 4, 11, and 17
+- Choices are matched from `character_weapon_masteries` by level
 
 ---
 
@@ -1382,6 +1505,8 @@ Import spell-to-class mappings from the `spells/sources.json` file. This populat
 | `POST` | `/characters/{id}/long-rest` | Yes | Perform long rest |
 | `GET` | `/characters/{id}/available-feats` | Yes | Get feats available to character |
 | `POST` | `/characters/{id}/asi-choice` | Yes | Increase ability scores or pick feat |
+| `GET` | `/characters/{id}/asi-history` | Yes | Get ASI/feat choice history |
+| `GET` | `/characters/{id}/progression` | Yes | Get character progression manifest |
 | `GET` | `/characters/{id}/proficiencies` | Yes | List character proficiencies |
 | `POST` | `/characters/{id}/proficiencies` | Yes | Add/update proficiency or expertise |
 | `PATCH` | `/characters/{id}/proficiencies/{prof_id}` | Yes | Change proficiency type |
@@ -1593,3 +1718,59 @@ Notes:
 - **Free spells** that are always prepared and don't count against the limit are in `class.additional_spells` (class-level) and each subclass's `subclass.additional_spells`. The `prepared` key indicates spells always prepared; `known` for always known; `innate` for innate casting.
 
 ---
+
+## Character Proficiencies - Skill Validation & Batching (Auth Required)
+
+### `GET /characters/{id}/proficiencies/skills`
+Mengembalikan daftar nama skill (lowercase) yang sudah dimiliki karakter. Berguna untuk UI picker agar bisa menonaktifkan/disable skill yang sudah dipilih.
+
+**Headers:**
+- `Authorization: Bearer <token>`
+
+**Response `200 OK`:**
+```json
+[
+  "stealth",
+  "perception",
+  "athletics"
+]
+```
+
+### `POST /characters/{id}/proficiencies/batch`
+Menambahkan banyak profisiensi sekaligus dalam satu request. Jika ada skill yang duplikat, sistem akan meng-skip-nya tanpa memunculkan error (penanganan replacement diharapkan dilakukan oleh frontend). Hanya profisiensi yang berhasil ditambahkan yang akan dikembalikan.
+
+**Headers:**
+- `Authorization: Bearer <token>`
+- `Content-Type: application/json`
+
+**Request Body:**
+```json
+[
+  {"category": "skill", "name": "Stealth", "proficiency_type": "proficiency"},
+  {"category": "skill", "name": "Perception", "proficiency_type": "proficiency"}
+]
+```
+
+**Response `200 OK`:**
+```json
+[
+  {
+    "id": 102,
+    "character_id": "uuid-character",
+    "category": "skill",
+    "name": "perception",
+    "proficiency_type": "proficiency"
+  }
+]
+```
+*(Catatan: "Stealth" tidak dikembalikan karena sudah dimiliki/duplikat)*
+
+### Error Handling pada `POST /characters/{id}/proficiencies`
+Jika frontend mencoba menambahkan skill yang sudah dimiliki karakter via endpoint standar (non-batch), backend akan mengembalikan error **409 Conflict** untuk memicu aturan Replacement D&D 2024:
+
+**Response `409 Conflict`:**
+```json
+{
+  "error": "DUPLICATE_SKILL_REPLACEMENT_REQUIRED: Skill 'stealth' sudah dimiliki (type: proficiency). Pilih skill lain sebagai replacement sesuai aturan 2024."
+}
+```

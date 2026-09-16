@@ -1,12 +1,16 @@
 use super::import_helpers::{get_source_id, upsert_source};
 use serde_json::Value;
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_optional_features(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of optional features from JSON data");
     let opt_features = match data["optionalfeature"].as_array() {
         Some(o) => o,
         None => return Ok(()),
     };
+
+    tracing::info!(count = opt_features.len(), "Importing optional features");
 
     for of in opt_features {
         let source_slug = of["source"].as_str().unwrap_or("PHB");
@@ -38,6 +42,8 @@ pub async fn import_optional_features(pool: &PgPool, data: &Value) -> anyhow::Re
             }
         }
     }
+
+    tracing::info!(count = opt_features.len(), "Successfully imported {} optional feature records.", opt_features.len());
 
     Ok(())
 }

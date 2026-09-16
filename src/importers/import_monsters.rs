@@ -1,12 +1,16 @@
 use super::import_helpers::{get_source_id, upsert_source};
 use serde_json::Value;
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_monsters(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of monsters from JSON data");
     let monsters = match data["monster"].as_array() {
         Some(m) => m,
         None => return Ok(()),
     };
+
+    tracing::info!(count = monsters.len(), "Importing monsters");
 
     for m in monsters {
         let source_slug = m["source"].as_str().unwrap_or("PHB");
@@ -54,6 +58,8 @@ pub async fn import_monsters(pool: &PgPool, data: &Value) -> anyhow::Result<()> 
         .execute(pool)
         .await?;
     }
+
+    tracing::info!(count = monsters.len(), "Successfully imported {} monster records.", monsters.len());
 
     Ok(())
 }

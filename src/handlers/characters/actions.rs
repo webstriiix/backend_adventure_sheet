@@ -124,8 +124,22 @@ pub async fn get_character_actions(
         let is_finesse = item
             .properties
             .iter()
-            .any(|p| p.to_lowercase() == "finesse");
-        let is_ranged = item.item_type.as_deref() == Some("R");
+            .any(|p| p.split('|').next().unwrap_or(p).to_lowercase() == "finesse");
+        let is_ranged = item
+            .item_type
+            .as_deref()
+            .map(|t| t.split('|').next().unwrap_or(t))
+            == Some("R");
+        let has_reach = item
+            .properties
+            .iter()
+            .any(|p| matches!(p.split('|').next().unwrap_or(p).to_lowercase().as_str(), "r" | "reach"));
+
+        let range = if has_reach {
+            Some("10ft.".to_string())
+        } else {
+            None
+        };
 
         let stat_mod = if is_ranged {
             dex_mod
@@ -158,8 +172,10 @@ pub async fn get_character_actions(
         let action_item = ActionItem {
             name: item.name.clone(),
             source: None,
-            description: item.entries.map(|e| e.to_string()),
-            range: None,
+            description: item.entries.and_then(|e| {
+                if e.is_null() { None } else { Some(e.to_string()) }
+            }),
+            range,
             hit_bonus: Some(hit_str),
             damage: if dmg_str.is_empty() {
                 None

@@ -4,13 +4,20 @@ use super::import_helpers::{
 use crate::importers::pipe_parser::{parse_class_feature_entry, parse_feature_ref};
 use serde_json::Value;
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of classes from JSON data");
+
     // Classes + class-level feature gates
     if let Some(classes) = data["class"].as_array() {
+        tracing::info!(
+            count = classes.len(),
+            "Importing classes and class feature gates"
+        );
         for cls in classes {
             let source_slug = cls["source"].as_str().unwrap_or("PHB");
-            upsert_source(pool, source_slug, false).await?;
+            let is_homebrew = source_slug.ends_with("HB"); upsert_source(pool, source_slug, is_homebrew).await?;
             let source_id = get_source_id(pool, source_slug).await?;
             let class_id = upsert_class(pool, cls, source_id).await?;
 
@@ -51,9 +58,10 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // Class features
     if let Some(features) = data["classFeature"].as_array() {
+        tracing::info!(count = features.len(), "Importing class features");
         for feat in features {
             let source_slug = feat["source"].as_str().unwrap_or("PHB");
-            upsert_source(pool, source_slug, false).await?;
+            let is_homebrew = source_slug.ends_with("HB"); upsert_source(pool, source_slug, is_homebrew).await?;
             let source_id = get_source_id(pool, source_slug).await?;
 
             if let Ok(class_id) = get_class_id(
@@ -68,13 +76,12 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                     INSERT INTO class_features
                         (name, source_id, class_id, level, entries, is_subclass_gate)
                     VALUES ($1,$2,$3,$4,$5, false)
-                    ON CONFLICT (name, source_id, class_id)
-                    DO UPDATE SET 
-                        entries = CASE 
-                            WHEN EXCLUDED.entries IS NULL OR EXCLUDED.entries = 'null'::jsonb THEN class_features.entries 
-                            ELSE EXCLUDED.entries 
-                        END,
-                        level = EXCLUDED.level
+                    ON CONFLICT (class_id, source_id, name, level)
+                    DO UPDATE SET
+                        entries = CASE
+                            WHEN EXCLUDED.entries IS NULL OR EXCLUDED.entries = 'null'::jsonb THEN class_features.entries
+                            ELSE EXCLUDED.entries
+                        END
                     "#,
                     feat["name"].as_str().unwrap_or(""),
                     source_id,
@@ -90,10 +97,34 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // Subclasses
     if let Some(subclasses) = data["subclass"].as_array() {
+        tracing::info!(count = subclasses.len(), "Importing subclasses");
         for sc in subclasses {
+            // Skip transitional/pointer entries that have been reprinted
+            if sc.get("reprintedAs").is_some() {
+                tracing::debug!(
+                    "Skipping transitional subclass entry (reprintedAs): {} ({}/{})",
+                    sc["name"].as_str().unwrap_or(""),
+                    sc["source"].as_str().unwrap_or(""),
+                    sc["shortName"].as_str().unwrap_or("")
+                );
+                continue;
+            }
+
+            // Only import entries with explicit edition markers: "classic" (PHB 2014) or "one" (XPHB 2024)
+            // Transitional entries have empty/missing edition field
+            let edition = sc["edition"].as_str();
+            if edition != Some("classic") && edition != Some("one") {
+                tracing::debug!(
+                    "Skipping subclass entry with invalid/missing edition: {} (edition={:?})",
+                    sc["name"].as_str().unwrap_or(""),
+                    edition
+                );
+                continue;
+            }
+
             let source_slug = sc["source"].as_str().unwrap_or("PHB");
             let class_source = sc["classSource"].as_str().unwrap_or("PHB");
-            upsert_source(pool, source_slug, false).await?;
+            let is_homebrew = source_slug.ends_with("HB"); upsert_source(pool, source_slug, is_homebrew).await?;
             let source_id = get_source_id(pool, source_slug).await?;
 
             if let Ok(class_id) =
@@ -143,13 +174,14 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // Subclass features
     if let Some(sc_features) = data["subclassFeature"].as_array() {
+        tracing::info!(count = sc_features.len(), "Importing subclass features");
         for feat in sc_features {
             let source_slug = feat["source"].as_str().unwrap_or("PHB");
             let class_source = feat["classSource"].as_str().unwrap_or("PHB");
             let sc_source = feat["subclassSource"].as_str().unwrap_or("PHB");
             let sc_short_name = feat["subclassShortName"].as_str().unwrap_or("");
 
-            upsert_source(pool, source_slug, sc_source != "PHB").await?;
+            let is_homebrew = source_slug.ends_with("HB"); upsert_source(pool, source_slug, is_homebrew).await?;
             let source_id = get_source_id(pool, source_slug).await?;
 
             if let Ok(class_id) =
@@ -163,13 +195,12 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                         INSERT INTO subclass_features
                             (name, source_id, subclass_id, level, header, entries)
                         VALUES ($1,$2,$3,$4,$5,$6)
-                        ON CONFLICT (name, source_id, subclass_id)
-                        DO UPDATE SET 
-                            entries = CASE 
-                                WHEN EXCLUDED.entries IS NULL OR EXCLUDED.entries = 'null'::jsonb THEN subclass_features.entries 
-                                ELSE EXCLUDED.entries 
-                            END,
-                            level = EXCLUDED.level
+                        ON CONFLICT (subclass_id, source_id, name, level)
+                        DO UPDATE SET
+                            entries = CASE
+                                WHEN EXCLUDED.entries IS NULL OR EXCLUDED.entries = 'null'::jsonb THEN subclass_features.entries
+                                ELSE EXCLUDED.entries
+                            END
                         "#,
                         feat["name"].as_str().unwrap_or(""),
                         source_id,
@@ -187,20 +218,25 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // --- Map class-feature gates to subclass features ---
     if let Some(classes) = data["class"].as_array() {
+        tracing::info!("Mapping class-feature gates to subclass features");
         for cls in classes {
             let class_source = cls["source"].as_str().unwrap_or("PHB");
-            if let Ok(class_id) = get_class_id(pool, cls["name"].as_str().unwrap_or(""), class_source).await {
+            if let Ok(class_id) =
+                get_class_id(pool, cls["name"].as_str().unwrap_or(""), class_source).await
+            {
                 if let Some(features) = cls["classFeatures"].as_array() {
                     for entry in features {
                         if let Some(parsed) = parse_class_feature_entry(entry) {
-                            if !parsed.gain_subclass { continue; }
+                            if !parsed.gain_subclass {
+                                continue;
+                            }
 
                             // find the class_feature id referenced by this entry
                             let feature_name = parsed.feature_ref.name;
                             let feature_level = parsed.feature_ref.level as i32;
                             let feature_source = parsed.feature_ref.class_source;
 
-                            if let Ok(source_id) = get_source_id(pool, &feature_source).await {
+                            if let Ok(_source_id) = get_source_id(pool, &feature_source).await {
                                 if let Some(cf_row) = sqlx::query!(
                                     "SELECT cf.id FROM class_features cf JOIN sources s ON s.id = cf.source_id WHERE cf.name = $1 AND cf.class_id = $2 AND s.slug = $3",
                                     feature_name,
@@ -234,6 +270,8 @@ pub async fn import_classes(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
             }
         }
     }
+
+    tracing::info!("Successfully imported classes, features, subclasses, and subclass features");
 
     Ok(())
 }

@@ -1,12 +1,16 @@
 use super::import_helpers::{get_class_id, get_source_id, get_spell_id, upsert_source};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_spells(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of spells from JSON data");
     let spells = match data["spell"].as_array() {
         Some(s) => s,
         None => return Ok(()),
     };
+
+    tracing::info!(count = spells.len(), "Starting import of spells from JSON array");
 
     for s in spells {
         let source_slug = s["source"].as_str().unwrap_or("PHB");
@@ -41,17 +45,23 @@ pub async fn import_spells(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
         .await?;
     }
 
+    tracing::info!(count = spells.len(), "Successfully imported {} spell records.", spells.len());
+
     Ok(())
 }
 
 /// Import spell-to-class mappings from spells/sources.json
 /// Structure: { "PHB": { "SpellName": { "class": [{"name":"Wizard","source":"PHB"}], "classVariant": [...] } } }
 pub async fn import_spell_classes(pool: &PgPool, raw: &str) -> anyhow::Result<()> {
+    tracing::info!("Starting import of spell classes from JSON string");
     let data: Value = serde_json::from_str(raw)?;
 
     let obj = data
         .as_object()
         .ok_or_else(|| anyhow::anyhow!("Expected top-level object"))?;
+
+    let total_spells: usize = obj.values().filter_map(|v| v.as_object()).map(|m| m.len()).sum();
+    tracing::info!(source_count = obj.len(), spell_count = total_spells, "Importing spell-to-class mappings");
 
     for (source_slug, spells_map) in obj {
         let spells = match spells_map.as_object() {
@@ -100,6 +110,8 @@ pub async fn import_spell_classes(pool: &PgPool, raw: &str) -> anyhow::Result<()
             }
         }
     }
+
+    tracing::info!(source_count = obj.len(), spell_count = total_spells, "Successfully imported spell-to-class mappings");
 
     Ok(())
 }

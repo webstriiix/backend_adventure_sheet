@@ -1,16 +1,8 @@
+use adventure_sheets::{config, db, routes};
 use axum::{Router, extract::DefaultBodyLimit};
 use tokio::net::TcpListener;
 use tower_http::{cors::CorsLayer, trace::TraceLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-
-mod config;
-mod db;
-mod error;
-mod handlers;
-mod importers;
-mod models;
-mod routes;
-mod services;
 
 #[tokio::main]
 async fn main() {
@@ -27,10 +19,7 @@ async fn main() {
     let pool = db::create_pool(&config.database_url).await;
 
     // Run migrations automatically
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .expect("Migrations failed!!!");
+    db::run_migrations(&pool).await;
 
     let state = db::AppState { db: pool, config: config.clone() };
 

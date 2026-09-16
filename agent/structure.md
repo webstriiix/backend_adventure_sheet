@@ -1,47 +1,37 @@
-# Peta Struktur Repository — Backend
+# Arsitektur & Peta Kode Backend
 
-Repository ini menggunakan pola *Service-Oriented Architecture* untuk memisahkan domain logic (aturan D&D 5e) dari layer transport (Axum handlers) dan layer persisten (SQLx DB).
+Folder Backend tersusun sedemikian rupa dengan peran dan tanggung jawab direktori terpisah.
 
-## 1. Direktori Utama
+## Peta Direktori & Lokasi Signifikan
 
-```text
-adventure_sheets/
-├── agent/            # Dokumentasi & Panduan Agent
-├── migrations/       # SQL Migration files (versioned)
-└── src/
-    ├── handlers/     # Axum endpoint wrappers (request context parsing)
-    ├── models/       # Struct domain (Database model & DTOs)
-    ├── routes/       # Axum Route definitions
-    ├── services/     # Rule validation & kalkulasi bisnis
-    ├── importers/    # Logika import data kompendium (5etools format)
-    └── db.rs         # Database connection pool state
-```
+- **`src/main.rs`** 
+  Konfigurasi port environment, setup HTTP layer global (Core rate limiting, CORS configuration, payload limits), dan router mount point.
+- **`src/routes/`**
+  (`src/routes/mod.rs`) Mengandung routing tree Axum (`Router::new().route(...)`), menggabungkan *handler* untuk base URL `/api/v1/*`.
+- **`src/handlers/`**
+  Controller endpoint HTTP. Semua permintaan ditarik ke dalam file di sini, dibagi per resource (misalnya `auth.rs`, `compendium.rs`). Penanganan karakter D&D diisolasi secara mendalam di folder `src/handlers/characters/` karena memiliki sub-logic kompleks seperti aksi `rests.rs`, `spells.rs`, dan `progression.rs`.
+- **`src/models/`**
+  Rust Structs (dengan macro `serde` JSON derive). Memodelkan tabel psql 1:1 map (`class.rs`, `items.rs`, `monsters.rs`, dsb.).
+- **`src/importers/`**
+  Pusat parsing dan ekstraksi JSON format 5etools ke format insersi SQLx.
+  **Lokasi FIle Kunci (Bukti Historis)**: `src/importers/import_classes.rs` dan file serupa adalah titik paling rentan *(prone area)* terhadap inkonsistensi struktur versi source. Proses ini mencakup manipulasi parsing ON CONFLICT (Baca historis investigasi debug pada `importers` sebelum memodifikasinya).
+- **`src/services/`**
+  (`src/services/auth.rs`) Modul untuk pemisahan logika enkripsi, bisnis verifikasi JWT dan password.
+- **`migrations/`**
+  Repoting migrasi SQL mentah yang di-*track* SQLx.
+- **`tests/`**
+  Skrip pengujian integrasi (`smoke_test.py`) dan automated unit integration tests Rust (`wizard_integration_tests.rs`).
 
-## 2. Aturan Penempatan Kode
+## Aturan Penempatan Perubahan Fitur Baru
 
-| Jenis Perubahan | Penempatan File | Keterangan |
-|---|---|---|
-| **Resource Baru (API)** | `src/routes/` | Tambah module route baru, daftarkan di `main.rs`. |
-| **Logic Endpoint** | `src/handlers/{resource}/` | Parsing payload, Auth check (user_id), panggil service. |
-| **Aturan Game (5e)** | `src/services/` | Logika validasi dan kalkulasi stats final. |
-| **Domain Data** | `src/models/` | Struct representasi database atau DTO. |
-
----
-
-## 3. Contoh Path Konkret
-
-- **`src/models/character.rs`**: Struct `Character` dan impl methods dasar.
-- **`src/handlers/characters/progression.rs`**: Endpoint API untuk `GET /characters/{id}/progression`, parse request, panggil `manifest_service`.
-- **`src/services/manifest_service.rs`**: Logic utama evaluasi progression manifest (tidak ada di repo, harus dibuat).
-- **`src/routes/mod.rs`**: Pendaftaran endpoint character: `.route("/characters/:id/progression", get(handlers::characters::progression::get_manifest))`.
-
----
-
-## 4. Alur Tambah Fitur Baru (Best Practice)
-
-1. **Definisikan Schema DB** (jika butuh storage baru): Buat file di `migrations/`.
-2. **Definisikan Domain Model**: Tambah struct di `src/models/`.
-3. **Impelementasi Rule Service**: Buat logika di `src/services/` (lakukan kalkulasi/validasi di sini, bukan di handler).
-4. **Implementasi Handler**: Parsing input di `src/handlers/`, panggil service.
-5. **Daftarkan Route**: Tambah route di `src/routes/`.
-6. **Update Dokumentasi API**: Wajib perbarui `API_DOCUMENTATION.md` di root repo dalam commit yang sama.
+Jika sebuah fitur / task baru masuk:
+1. **Tabel Basis Data Baru / Perubahan Schema**:
+   Buat migrasi SQL baru di `migrations/` dengan urutan timestamp waktu standar SQLx.
+2. **Representasi Bentuk Struct & Field Map**:
+   Buat struct Rust baru (atau edit struct rujukan) di dalam `src/models/`.
+3. **Logika Endpoint & Rule Karakter**:
+   Buat endpoint di `src/handlers/`, pisahkan file sub-logika ke `src/handlers/characters/` jika spesifik mengendalikan sheet pemain.
+4. **Logika Importer (Jika bersumber dari 5eTools JSON)**:
+   Buat atau ubah modul di `src/importers/`. Pastikan logic filter _transitional reference_ berlaku aman.
+5. **Kontrak Eksternal**:
+   Registrasikan rute di `src/routes/mod.rs` & wajib dokumentasikan payloads di `API_DOCUMENTATION.md` (akar repositori).

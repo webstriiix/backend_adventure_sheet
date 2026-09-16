@@ -1,10 +1,13 @@
 use super::import_helpers::{get_race_id, get_source_id, upsert_source};
 use serde_json::{Value, json};
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of races from JSON data");
     // Races
     if let Some(races) = data["race"].as_array() {
+        tracing::info!(count = races.len(), "Importing races");
         for r in races {
             let source_slug = r["source"].as_str().unwrap_or("PHB");
             upsert_source(pool, source_slug, false).await?;
@@ -70,6 +73,7 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // Subraces
     if let Some(subraces) = data["subrace"].as_array() {
+        tracing::info!(count = subraces.len(), "Importing subraces");
         for sr in subraces {
             let source_slug = sr["source"].as_str().unwrap_or("PHB");
             upsert_source(pool, source_slug, false).await?;
@@ -126,7 +130,11 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                 }
 
                 // variable trait hints
-                if entries_text.to_lowercase().contains("one of the following") || entries_text.to_lowercase().contains("one of the following options") {
+                if entries_text.to_lowercase().contains("one of the following")
+                    || entries_text
+                        .to_lowercase()
+                        .contains("one of the following options")
+                {
                     sqlx::query!(
                         r#"INSERT INTO race_options (race_id, subrace_id, source_id, option_type, choices, min_choose, max_choose, note)
                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING"#,
@@ -148,6 +156,9 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
 
     // --- heuristics: detect options in races (top-level) ---
     if let Some(races) = data["race"].as_array() {
+        tracing::info!(
+            "Running heuristic detection for race options (bonus feats, cantrips, variable traits)"
+        );
         for r in races {
             let source_slug = r["source"].as_str().unwrap_or("PHB");
             let source_id = get_source_id(pool, source_slug).await?;
@@ -161,7 +172,7 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                 if grants_bonus_feat {
                     sqlx::query!(
                         r#"INSERT INTO race_options (race_id, subrace_id, source_id, option_type, choices, min_choose, max_choose, note)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING"#,
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (race_id, subrace_id, source_id, option_type) DO NOTHING"#,
                         race_id,
                         None::<i32>,
                         source_id,
@@ -180,7 +191,7 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                 if entries_text.to_lowercase().contains("cantrip") {
                     sqlx::query!(
                         r#"INSERT INTO race_options (race_id, subrace_id, source_id, option_type, choices, min_choose, max_choose, note)
-                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING"#,
+                           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (race_id, subrace_id, source_id, option_type) DO NOTHING"#,
                         race_id,
                         None::<i32>,
                         source_id,
@@ -193,7 +204,11 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                     .execute(pool)
                     .await?;
                 }
-                if entries_text.to_lowercase().contains("one of the following") || entries_text.to_lowercase().contains("one of the following options") {
+                if entries_text.to_lowercase().contains("one of the following")
+                    || entries_text
+                        .to_lowercase()
+                        .contains("one of the following options")
+                {
                     sqlx::query!(
                         r#"INSERT INTO race_options (race_id, subrace_id, source_id, option_type, choices, min_choose, max_choose, note)
                            VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING"#,
@@ -213,9 +228,10 @@ pub async fn import_races(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
         }
     }
 
+    tracing::info!("Successfully imported all races, subraces, and race options");
+
     Ok(())
 }
-
 
 // --- helper: flatten entries into a single searchable string ---
 fn flatten_entries_text(val: &serde_json::Value) -> String {
@@ -226,15 +242,23 @@ fn flatten_entries_text(val: &serde_json::Value) -> String {
                 out.push(' ');
             }
             serde_json::Value::Array(a) => {
-                for item in a { collect(item, out); }
+                for item in a {
+                    collect(item, out);
+                }
             }
             serde_json::Value::Object(o) => {
                 if let Some(name) = o.get("name").and_then(|n| n.as_str()) {
                     out.push_str(name);
                     out.push(' ');
                 }
-                if let Some(entries) = o.get("entries") { collect(entries, out); }
-                for (_k, v) in o.iter() { if _k != "entries" { collect(v, out); } }
+                if let Some(entries) = o.get("entries") {
+                    collect(entries, out);
+                }
+                for (_k, v) in o.iter() {
+                    if _k != "entries" {
+                        collect(v, out);
+                    }
+                }
             }
             _ => {}
         }

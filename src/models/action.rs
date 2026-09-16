@@ -3,14 +3,23 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct ActionItem {
     pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub range: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub hit_bonus: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub damage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub max_uses: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub current_uses: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reset_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub time: Option<serde_json::Value>,
 }
 

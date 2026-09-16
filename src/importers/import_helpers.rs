@@ -88,20 +88,88 @@ fn extract_spell_slots(class_table_groups: &Value) -> Value {
     Value::Null
 }
 
+/// Extract ASI/Feat levels from classFeatures entries like "Ability Score Improvement|Class|Source|4".
+fn extract_asi_levels(class_features: &Value) -> Vec<i32> {
+    let mut levels = Vec::new();
+    if let Some(arr) = class_features.as_array() {
+        for entry in arr {
+            let feature_ref = match entry {
+                Value::String(s) => Some(s.as_str()),
+                Value::Object(obj) => obj.get("classFeature").and_then(|v| v.as_str()),
+                _ => None,
+            };
+            if let Some(s) = feature_ref {
+                if s.starts_with("Ability Score Improvement") {
+                    // Format: "Ability Score Improvement|Class|Source|Level" or
+                    //        "Ability Score Improvement|Class|Source|Level|Source2|Level2"
+                    let parts: Vec<&str> = s.split('|').collect();
+                    if let Some(level_str) = parts.get(3) {
+                        if let Ok(level) = level_str.parse::<i32>() {
+                            levels.push(level);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    levels.sort();
+    levels.dedup();
+    levels
+}
+
+/// Extract primary abilities from `primaryAbility` JSON.
+/// Handles both `["int"]` and `[{"int": true}]` shapes.
+fn extract_primary_ability(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| {
+                    if let Some(s) = v.as_str() {
+                        return Some(s.to_lowercase());
+                    }
+                    if let Some(obj) = v.as_object() {
+                        return obj
+                            .iter()
+                            .find(|(_, val)| val.as_bool() == Some(true))
+                            .map(|(key, _)| key.to_lowercase());
+                    }
+                    None
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn int_array(value: &Value) -> Vec<i32> {
+    value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().map(|n| n as i32))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow::Result<i32> {
     let name = cls["name"].as_str().unwrap_or("");
-    let asi_levels = match name {
-        "Fighter" => vec![4, 6, 8, 12, 14, 16, 19],
-        "Rogue" => vec![4, 8, 10, 12, 16, 18],
-        _ => vec![4, 8, 12, 16, 19],
-    };
+    let asi_levels = extract_asi_levels(&cls["classFeatures"]);
 
     let hit_die = cls["hd"]["faces"].as_i64().unwrap_or(-1) as i32;
     let spellcasting_ability = cls["spellcastingAbility"].as_str();
     let caster_progression = cls["casterProgression"].as_str();
-    let editon = cls["edition"].as_str();
+    let edition = cls["edition"].as_str();
     let spell_slots = extract_spell_slots(&cls["classTableGroups"]);
     let additional_spells = cls.get("additionalSpells");
+
+    // XPHB / 2024 fields
+    let primary_ability = extract_primary_ability(&cls["primaryAbility"]);
+    let prepared_spells_progression = int_array(&cls["preparedSpellsProgression"]);
+    let prepared_spells_change = cls["preparedSpellsChange"].as_str();
+    let cantrip_progression = int_array(&cls["cantripProgression"]);
+    let spells_known_progression_fixed = int_array(&cls["spellsKnownProgressionFixed"]);
+    let feat_progression = cls.get("featProgression");
 
     let row = sqlx::query!(
         r#"
@@ -111,9 +179,11 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
             skill_choices, starting_equipment, multiclass_requirements,
             class_table, subclass_title, edition, asi_levels,
             weapon_proficiencies, armor_proficiencies,
-            spell_slots, additional_spells
+            spell_slots, additional_spells,
+            primary_ability, prepared_spells_progression, prepared_spells_change,
+            cantrip_progression, spells_known_progression_fixed, feat_progression
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
         ON CONFLICT (name, source_id) DO UPDATE
             SET hit_die = CASE WHEN EXCLUDED.hit_die = -1 THEN classes.hit_die ELSE EXCLUDED.hit_die END,
                 asi_levels = CASE WHEN EXCLUDED.asi_levels IS NULL THEN classes.asi_levels ELSE EXCLUDED.asi_levels END,
@@ -127,7 +197,13 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
                 class_table = CASE WHEN EXCLUDED.class_table IS NULL OR EXCLUDED.class_table = 'null'::jsonb THEN classes.class_table ELSE EXCLUDED.class_table END,
                 edition = COALESCE(EXCLUDED.edition, classes.edition),
                 spell_slots = CASE WHEN EXCLUDED.spell_slots IS NULL OR EXCLUDED.spell_slots = 'null'::jsonb THEN classes.spell_slots ELSE EXCLUDED.spell_slots END,
-                additional_spells = CASE WHEN EXCLUDED.additional_spells IS NULL OR EXCLUDED.additional_spells = 'null'::jsonb THEN classes.additional_spells ELSE EXCLUDED.additional_spells END
+                additional_spells = CASE WHEN EXCLUDED.additional_spells IS NULL OR EXCLUDED.additional_spells = 'null'::jsonb THEN classes.additional_spells ELSE EXCLUDED.additional_spells END,
+                primary_ability = CASE WHEN EXCLUDED.primary_ability IS NULL THEN classes.primary_ability ELSE EXCLUDED.primary_ability END,
+                prepared_spells_progression = CASE WHEN EXCLUDED.prepared_spells_progression IS NULL THEN classes.prepared_spells_progression ELSE EXCLUDED.prepared_spells_progression END,
+                prepared_spells_change = COALESCE(EXCLUDED.prepared_spells_change, classes.prepared_spells_change),
+                cantrip_progression = CASE WHEN EXCLUDED.cantrip_progression IS NULL THEN classes.cantrip_progression ELSE EXCLUDED.cantrip_progression END,
+                spells_known_progression_fixed = CASE WHEN EXCLUDED.spells_known_progression_fixed IS NULL THEN classes.spells_known_progression_fixed ELSE EXCLUDED.spells_known_progression_fixed END,
+                feat_progression = CASE WHEN EXCLUDED.feat_progression IS NULL OR EXCLUDED.feat_progression = 'null'::jsonb THEN classes.feat_progression ELSE EXCLUDED.feat_progression END
         RETURNING id
         "#,
         name,
@@ -147,7 +223,7 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
         cls.get("multiclassing"),
         cls["classTableGroups"],
         cls["subclassTitle"].as_str().unwrap_or("Subclass"),
-        editon,
+        edition,
         &asi_levels,
         &cls["startingProficiencies"]["weapons"]
             .as_array()
@@ -165,6 +241,12 @@ pub async fn upsert_class(pool: &PgPool, cls: &Value, source_id: i32) -> anyhow:
             .unwrap_or_default(),
         &spell_slots,
         additional_spells,
+        &primary_ability,
+        &prepared_spells_progression,
+        prepared_spells_change,
+        &cantrip_progression,
+        &spells_known_progression_fixed,
+        feat_progression,
     )
     .fetch_one(pool)
     .await?;

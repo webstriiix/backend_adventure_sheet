@@ -1,12 +1,16 @@
 use super::import_helpers::{get_source_id, upsert_source};
 use serde_json::Value;
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_feats(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of feats from JSON data");
     let feats = match data["feat"].as_array() {
         Some(f) => f,
         None => return Ok(()),
     };
+
+    tracing::info!(count = feats.len(), "Importing feats");
 
     for f in feats {
         let source_slug = f["source"].as_str().unwrap_or("PHB");
@@ -50,6 +54,8 @@ pub async fn import_feats(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
     }
+
+    tracing::info!(count = feats.len(), "Successfully imported {} feat records.", feats.len());
 
     Ok(())
 }

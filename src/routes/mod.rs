@@ -19,7 +19,10 @@ pub fn all_routes() -> Router<AppState> {
     let class_routes = Router::new()
         .route("/classes", get(classes::list_classes))
         .route("/classes/{name}/{source}", get(classes::get_class_detail))
-        .route("/classes/{name}/{source}/resources/{level}", get(classes::get_class_resources));
+        .route(
+            "/classes/{name}/{source}/resources/{level}",
+            get(classes::get_class_resources),
+        );
 
     let compendium_routes = Router::new()
         .route("/spells", get(compendium::list_spells))
@@ -27,7 +30,10 @@ pub fn all_routes() -> Router<AppState> {
         .route("/feats", get(compendium::list_feats))
         .route("/monsters", get(compendium::list_monsters))
         .route("/races", get(compendium::list_races))
-        .route("/races/{name}/{source}/options", get(compendium::list_race_options))
+        .route(
+            "/races/{name}/{source}/options",
+            get(compendium::list_race_options),
+        )
         .route("/subraces", get(compendium::list_subraces))
         .route("/backgrounds", get(compendium::list_backgrounds))
         .route(
@@ -49,8 +55,7 @@ pub fn all_routes() -> Router<AppState> {
         // Character classes and leveling
         .route(
             "/characters/{id}/classes",
-            get(characters::list_character_classes)
-                .post(characters::add_character_class),
+            get(characters::list_character_classes).post(characters::add_character_class),
         )
         .route(
             "/characters/{id}/classes/{class_id}",
@@ -114,6 +119,14 @@ pub fn all_routes() -> Router<AppState> {
         .route("/characters/{id}/long-rest", post(characters::long_rest))
         // ASI & Feats
         .route(
+            "/characters/{id}/asi-history",
+            get(characters::list_asi_history),
+        )
+        .route(
+            "/characters/{id}/progression",
+            get(characters::get_progression),
+        )
+        .route(
             "/characters/{id}/available-feats",
             get(characters::list_available_feats),
         )
@@ -131,6 +144,14 @@ pub fn all_routes() -> Router<AppState> {
             "/characters/{id}/proficiencies",
             get(characters::list_character_proficiencies)
                 .post(characters::add_character_proficiency),
+        )
+        .route(
+            "/characters/{id}/proficiencies/skills",
+            get(characters::list_character_skills_only),
+        )
+        .route(
+            "/characters/{id}/proficiencies/batch",
+            post(characters::add_character_proficiencies_batch),
         )
         .route(
             "/characters/{id}/proficiencies/{prof_id}",

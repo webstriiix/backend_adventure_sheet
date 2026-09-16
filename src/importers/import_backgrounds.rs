@@ -1,6 +1,7 @@
 use super::import_helpers::{get_source_id, upsert_source};
 use serde_json::Value;
 use sqlx::PgPool;
+use tracing;
 
 fn extract_feat_name_from_entries(entries: &Value) -> Option<String> {
     fn walk(val: &Value) -> Option<String> {
@@ -39,10 +40,13 @@ fn extract_feat_name_from_entries(entries: &Value) -> Option<String> {
 }
 
 pub async fn import_backgrounds(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of backgrounds from JSON data");
     let bgs = match data["background"].as_array() {
         Some(b) => b,
         None => return Ok(()),
     };
+
+    tracing::info!(count = bgs.len(), "Importing backgrounds");
 
     for bg in bgs {
         let source_slug = bg["source"].as_str().unwrap_or("PHB");
@@ -119,6 +123,8 @@ pub async fn import_backgrounds(pool: &PgPool, data: &Value) -> anyhow::Result<(
         .execute(pool)
         .await?;
     }
+
+    tracing::info!(count = bgs.len(), "Successfully imported {} background records.", bgs.len());
 
     Ok(())
 }

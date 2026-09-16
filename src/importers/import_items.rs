@@ -2,8 +2,10 @@ use super::import_helpers::{get_source_id, upsert_source};
 use bigdecimal::FromPrimitive;
 use serde_json::{json, Value};
 use sqlx::PgPool;
+use tracing;
 
 pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
+    tracing::info!("Starting import of items from JSON data");
     let mut all_items = Vec::new();
     if let Some(items) = data["item"].as_array() {
         all_items.extend(items.iter());
@@ -12,7 +14,9 @@ pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
         all_items.extend(base_items.iter());
     }
 
-    for i in all_items {
+    tracing::info!(count = all_items.len(), "Importing items and base items");
+
+    for i in &all_items {
         let source_slug = i["source"].as_str().unwrap_or("PHB");
         upsert_source(pool, source_slug, false).await?;
         let source_id = get_source_id(pool, source_slug).await?;
@@ -55,7 +59,7 @@ pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
                     .collect::<Vec<_>>())
                 .unwrap_or_default(),
             i["reqAttune"].as_bool().unwrap_or(false),
-            i["entries"],
+            i.get("entries").filter(|v| !v.is_null()).cloned(),
             i.get("wondrous")
                 .map(|w| w.as_bool().unwrap_or(false))
                 .unwrap_or(false)
@@ -67,6 +71,8 @@ pub async fn import_items(pool: &PgPool, data: &Value) -> anyhow::Result<()> {
         .execute(pool)
         .await?;
     }
+
+    tracing::info!(count = all_items.len(), "Successfully imported {} item records.", all_items.len());
 
     Ok(())
 }

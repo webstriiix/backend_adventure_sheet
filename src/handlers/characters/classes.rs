@@ -12,6 +12,7 @@ use axum::{
     http::HeaderMap,
 };
 use uuid::Uuid;
+use tracing;
 
 // GET /characters/:id/classes
 pub async fn list_character_classes(
@@ -60,6 +61,11 @@ pub async fn add_character_class(
 ) -> Result<Json<Character>> {
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
     verify_character_ownership(&state.db, character_id, user_id).await?;
+
+    let span = tracing::info_span!("wizard_add_class", %character_id, class_id = payload.class_id);
+    let _guard = span.enter();
+
+    tracing::info!(character_id = %character_id, "Saving Wizard Step: Multiclass Selection");
 
     let character = sqlx::query_as!(
         Character,
@@ -148,7 +154,10 @@ pub async fn update_character_class(
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
     verify_character_ownership(&state.db, character_id, user_id).await?;
 
-    // Prevent leveling past 20 total
+    let span = tracing::info_span!("wizard_update_class_level", %character_id, %class_id);
+    let _guard = span.enter();
+
+    tracing::info!(character_id = %character_id, class_id, new_level = payload.level, "Saving Wizard Step: Class Level Update");
     let total_level_record = sqlx::query!(
         "SELECT SUM(level) as total_level FROM character_classes WHERE character_id = $1 AND class_id != $2",
         character_id,

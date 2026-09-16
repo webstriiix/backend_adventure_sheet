@@ -9,6 +9,7 @@ use axum::{
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
 };
+use tracing;
 use uuid::Uuid;
 
 // GET /characters
@@ -68,6 +69,10 @@ pub async fn create_character(
     Json(payload): Json<CreateCharacter>,
 ) -> Result<Json<Character>> {
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    let span = tracing::info_span!("wizard_create_character", %user_id);
+    let _guard = span.enter();
+
+    tracing::info!(name = %payload.name, class_id = payload.class_id, "Starting character creation wizard");
 
     let mut tx = state.db.begin().await?;
 
@@ -101,6 +106,8 @@ pub async fn create_character(
 
     let char_id = row.id;
 
+    tracing::info!(character_id = %char_id, "Saving Wizard Step: Basic Info");
+
     // Insert class (starting at level 1)
     sqlx::query!(
         "INSERT INTO character_classes (character_id, class_id, level, is_primary) VALUES ($1, $2, 1, true)",
@@ -109,6 +116,8 @@ pub async fn create_character(
     )
     .execute(&mut *tx)
     .await?;
+
+    tracing::info!(character_id = %char_id, "Saving Wizard Step: Class Selection");
 
     if let (Some(race_id), Some(bonus_feat_id)) = (payload.race_id, payload.bonus_feat_id) {
         let race = sqlx::query!("SELECT grants_bonus_feat FROM races WHERE id = $1", race_id)
@@ -131,7 +140,7 @@ pub async fn create_character(
 
             sqlx::query!(
                 r#"
-                INSERT INTO character_feats 
+                INSERT INTO character_feats
                     (character_id, feat_id, uses_remaining, uses_max, recharge_on, source_type)
                 VALUES ($1, $2, $3, $4, $5, 'race')
                 "#,
@@ -179,7 +188,7 @@ pub async fn create_character(
 
             sqlx::query!(
                 r#"
-                INSERT INTO character_feats 
+                INSERT INTO character_feats
                     (character_id, feat_id, uses_remaining, uses_max, recharge_on, source_type)
                 VALUES ($1, $2, $3, $4, $5, 'background')
                 "#,
@@ -198,7 +207,11 @@ pub async fn create_character(
         }
     }
 
+    tracing::info!(character_id = %char_id, "Saving Wizard Step: Background & Feats");
+
     tx.commit().await?;
+
+    tracing::info!(character_id = %char_id, "Character creation wizard completed successfully");
 
     let character = sqlx::query_as!(
         Character,
@@ -216,6 +229,51 @@ pub async fn create_character(
     Ok(Json(character))
 }
 
+// Helper: D&D 5e XP to Level
+fn xp_to_level(xp: i32) -> i32 {
+    if xp >= 355000 {
+        20
+    } else if xp >= 305000 {
+        19
+    } else if xp >= 265000 {
+        18
+    } else if xp >= 225000 {
+        17
+    } else if xp >= 195000 {
+        16
+    } else if xp >= 165000 {
+        15
+    } else if xp >= 140000 {
+        14
+    } else if xp >= 120000 {
+        13
+    } else if xp >= 100000 {
+        12
+    } else if xp >= 85000 {
+        11
+    } else if xp >= 64000 {
+        10
+    } else if xp >= 48000 {
+        9
+    } else if xp >= 34000 {
+        8
+    } else if xp >= 23000 {
+        7
+    } else if xp >= 14000 {
+        6
+    } else if xp >= 6500 {
+        5
+    } else if xp >= 2700 {
+        4
+    } else if xp >= 900 {
+        3
+    } else if xp >= 300 {
+        2
+    } else {
+        1
+    }
+}
+
 // PUT /characters/:id
 pub async fn update_character(
     State(state): State<AppState>,
@@ -224,6 +282,10 @@ pub async fn update_character(
     Json(payload): Json<UpdateCharacter>,
 ) -> Result<Json<Character>> {
     let user_id = get_user_id(&headers, &state.config.jwt_secret)?;
+    let span = tracing::info_span!("wizard_update_character", %id, %user_id);
+    let _guard = span.enter();
+
+    tracing::info!(character_id = %id, "Starting character update (wizard step)");
 
     let updated = sqlx::query!(
         r#"
@@ -275,16 +337,24 @@ pub async fn update_character(
         "Character not found or access denied".into(),
     ))?;
 
+    tracing::info!(character_id = %updated.id, "Updated Stats for character {}", updated.id);
+
     // Update primary class if provided
     if let Some(class_id) = payload.class_id {
+        tracing::info!(character_id = %updated.id, class_id, "Saving Wizard Step: Class Selection");
+
+        // Calculate new level from XP
+        let new_level = xp_to_level(payload.experience_pts);
+
         sqlx::query!(
             r#"
             INSERT INTO character_classes (character_id, class_id, level, is_primary)
-            VALUES ($1, $2, 1, true)
-            ON CONFLICT (character_id, class_id) DO NOTHING
+            VALUES ($1, $2, $3, true)
+            ON CONFLICT (character_id, class_id) DO UPDATE SET level = EXCLUDED.level
             "#,
             updated.id,
-            class_id
+            class_id,
+            new_level
         )
         .execute(&state.db)
         .await?;
@@ -301,6 +371,7 @@ pub async fn update_character(
 
     // Update subclass on primary class if provided
     if let Some(subclass_id) = payload.subclass_id {
+        tracing::info!(character_id = %updated.id, "Saving Wizard Step: Subclass Selection");
         let primary = sqlx::query!(
             "SELECT class_id, level FROM character_classes WHERE character_id = $1 AND is_primary = true",
             updated.id
@@ -337,6 +408,8 @@ pub async fn update_character(
         .execute(&state.db)
         .await?;
     }
+
+    tracing::info!(character_id = %updated.id, "Updated Stats for character");
 
     let character = sqlx::query_as!(
         Character,

@@ -1,0 +1,11 @@
+{
+  "name": "Test Rogue",
+  "class": "Rogue",
+  "race": "Human",
+  "level": 4,
+  "skills": {
+    "class": ["Stealth", "Perception", "Acrobatics", "Sleight of Hand"],
+    "species": ["Insight"],
+    "feat": ["Stealth"]
+  }
+}

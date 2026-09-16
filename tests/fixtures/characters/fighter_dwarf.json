@@ -1,0 +1,11 @@
+{
+  "name": "Test Fighter",
+  "class": "Fighter",
+  "race": "Mountain Dwarf",
+  "level": 4,
+  "skills": {
+    "class": ["Athletics", "Intimidation"],
+    "species": [],
+    "feat": []
+  }
+}
