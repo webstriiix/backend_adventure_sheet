@@ -142,7 +142,9 @@ pub async fn get_progression(
 
     let mut decision_points: Vec<DecisionPoint> = Vec::new();
 
-    for level in 1..=total_level {
+    for level in 1..=20 {
+        let is_locked = level > total_level;
+
         // ── ASI / Feat decision point ──
         if asi_set.contains(&level) {
             let choices_for_level = asi_by_level.get(&level).into_iter().flatten();
@@ -191,28 +193,27 @@ pub async fn get_progression(
                 });
             }
 
+            let status = if is_locked {
+                "locked".into()
+            } else if !current_choices.is_empty() {
+                "complete".into()
+            } else {
+                "pending".into()
+            };
+
             decision_points.push(DecisionPoint {
                 level,
                 name: "Ability Score Improvement".into(),
                 r#type: "decision_slot".into(),
                 choice_type: "asi".into(),
                 required_count: 1,
-                status: if !current_choices.is_empty() {
-                    "complete".into()
-                } else {
-                    "pending".into()
-                },
+                status,
                 current_choices,
             });
         }
 
         // ── Subclass Selection decision point ──
         if level == subclass_unlock_level {
-            let status = if subclass_id.is_some() {
-                "complete".into()
-            } else {
-                "pending".into()
-            };
             let mut sc_choices = Vec::new();
             if let Some(sc_id) = subclass_id {
                 let sc_name =
@@ -224,6 +225,15 @@ pub async fn get_progression(
                     description: sc_name,
                 });
             }
+
+            let status = if is_locked {
+                "locked".into()
+            } else if subclass_id.is_some() {
+                "complete".into()
+            } else {
+                "pending".into()
+            };
+
             decision_points.push(DecisionPoint {
                 level,
                 name: "Subclass Selection".into(),
@@ -243,19 +253,23 @@ pub async fn get_progression(
                 .filter(|wm| wm.source_level == level)
                 .collect();
 
+            let status = if is_locked {
+                "locked".into()
+            } else if chosen.len() as i32 >= required {
+                "complete".into()
+            } else if chosen.is_empty() {
+                "pending".into()
+            } else {
+                "partial".into()
+            };
+
             decision_points.push(DecisionPoint {
                 level,
                 name: "Weapon Mastery".into(),
                 r#type: "decision_slot".into(),
                 choice_type: "weapon_mastery".into(),
                 required_count: required,
-                status: if chosen.len() as i32 >= required {
-                    "complete".into()
-                } else if chosen.is_empty() {
-                    "pending".into()
-                } else {
-                    "partial".into()
-                },
+                status,
                 current_choices: chosen
                     .iter()
                     .map(|wm| ChoiceDetail {
