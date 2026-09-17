@@ -12,8 +12,8 @@ use axum::{
     extract::{Path, State},
     http::HeaderMap,
 };
-use uuid::Uuid;
 use tracing;
+use uuid::Uuid;
 
 // GET /characters/:id/asi-history
 pub async fn list_asi_history(
@@ -86,9 +86,19 @@ pub async fn list_available_feats(
     .await?;
     let has_spellcasting = spell_check.is_some();
 
-    let all_feats = sqlx::query_as!(Feat, "SELECT * FROM feats")
-        .fetch_all(&state.db)
-        .await?;
+    let all_feats = sqlx::query_as!(
+        Feat,
+        r#"
+        SELECT
+            f.id, f.name, f.source_id, src.slug as source_slug, f.page,
+            f.prerequisite, f.ability, f.skill_proficiencies, f.resist,
+            f.additional_spells, f.has_uses, f.uses_formula, f.recharge_on, f.entries
+        FROM feats f
+        JOIN sources src ON src.id = f.source_id
+        "#
+    )
+    .fetch_all(&state.db)
+    .await?;
 
     let mut available = Vec::new();
 
@@ -269,7 +279,7 @@ pub async fn choose_asi_or_feat(
 
         sqlx::query!(
             r#"
-            INSERT INTO character_feats 
+            INSERT INTO character_feats
                 (character_id, feat_id, uses_remaining, uses_max, recharge_on, source_type, gained_at_level)
             VALUES ($1, $2, $3, $4, $5, $6, $7)
             "#,

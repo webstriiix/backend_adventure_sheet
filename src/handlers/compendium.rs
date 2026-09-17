@@ -1,16 +1,21 @@
+use crate::error::AppError;
 use axum::{
     Json,
-    extract::{Query, State, Path},
+    extract::{Path, Query, State},
 };
-use crate::error::AppError;
 use serde::Deserialize;
 
 use crate::{
     db::AppState,
     error::Result,
     models::{
-        backgrounds::Background, feats::Feat, items::Item, monsters::Monster,
-        optional_features::OptionalFeature, races::{Race, Subrace}, spells::Spell,
+        backgrounds::Background,
+        feats::Feat,
+        items::Item,
+        monsters::Monster,
+        optional_features::OptionalFeature,
+        races::{Race, Subrace},
+        spells::Spell,
     },
 };
 
@@ -163,7 +168,15 @@ pub async fn list_race_options(
     .fetch_optional(&state.db)
     .await?;
 
-    let race_id = match row { Some(r) => r.id, None => return Err(AppError::NotFound(format!("Race {}/{} not found", name, source))) };
+    let race_id = match row {
+        Some(r) => r.id,
+        None => {
+            return Err(AppError::NotFound(format!(
+                "Race {}/{} not found",
+                name, source
+            )));
+        }
+    };
 
     let rows = sqlx::query_as!(
         crate::models::race_options::RaceOption,
@@ -214,7 +227,11 @@ pub async fn list_feats(
     let rows = sqlx::query_as!(
         Feat,
         r#"
-        SELECT f.* FROM feats f
+        SELECT
+            f.id, f.name, f.source_id, src.slug as source_slug, f.page,
+            f.prerequisite, f.ability, f.skill_proficiencies, f.resist,
+            f.additional_spells, f.has_uses, f.uses_formula, f.recharge_on, f.entries
+        FROM feats f
         JOIN sources src ON src.id = f.source_id
         WHERE ($1::text IS NULL OR f.name ILIKE $1)
           AND ($2::text IS NULL OR src.slug = $2)

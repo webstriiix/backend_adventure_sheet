@@ -7,6 +7,7 @@ pub struct Feat {
     pub id: i32,
     pub name: String,
     pub source_id: i32,
+    pub source_slug: String,
     pub page: Option<i32>,
     pub prerequisite: Option<Value>,
     pub ability: Option<Value>,

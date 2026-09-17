@@ -331,6 +331,59 @@ Search items. **Limit: 100 results.**
 
 ---
 
+### `GET /feats`
+
+Search feats. **No result limit.**
+
+**Query Parameters:**
+
+| Param | Type | Required | Description |
+|---|---|---|---|
+| `name` | string | No | Substring search (case-insensitive) |
+| `source` | string | No | Filter by source slug |
+
+**Example:** `GET /feats?name=Alert`
+
+**Response:** `200 OK`
+```json
+[
+  {
+    "id": 1,
+    "name": "Alert",
+    "source_id": 1,
+    "source_slug": "PHB",
+    "page": 165,
+    "prerequisite": null,
+    "ability": null,
+    "skill_proficiencies": null,
+    "resist": null,
+    "additional_spells": null,
+    "has_uses": false,
+    "uses_formula": null,
+    "recharge_on": null,
+    "entries": ["Always on the lookout for danger..."]
+  },
+  {
+    "id": 2,
+    "name": "Alert",
+    "source_id": 2,
+    "source_slug": "XPHB",
+    "page": 175,
+    "prerequisite": null,
+    "ability": null,
+    "skill_proficiencies": null,
+    "resist": null,
+    "additional_spells": null,
+    "has_uses": false,
+    "uses_formula": null,
+    "recharge_on": null,
+    "entries": ["You have gained extraordinary awareness..."]
+  }
+]
+```
+
+---
+
 ### `GET /monsters`
 
 Search monsters. **Limit: 50 results.**
